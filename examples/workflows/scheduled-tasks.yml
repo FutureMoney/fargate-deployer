@@ -1,0 +1,34 @@
+# Deploy cron jobs.
+#
+# Identical to a service deployment — only the manifest differs. The action
+# reads `kind: ScheduledTasks` and creates EventBridge rules instead of a
+# service, and skips the wait-for-stability step, which does not apply.
+name: Deploy scheduled tasks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/jobs/**'
+      - 'deploy/jobs.yaml'
+      - 'Dockerfile'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: futuremoney/fargate-deployer@v1
+        with:
+          manifest: deploy/jobs.yaml
+          role-to-assume: arn:aws:iam::111122223333:role/github-actions-deploy
+          ecr-repository: my-app-jobs
+          build-args: |
+            NODE_ENV=production
+          build-secrets: |
+            NPM_TOKEN=${{ secrets.NPM_TOKEN }}

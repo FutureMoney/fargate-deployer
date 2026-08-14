@@ -1,0 +1,30 @@
+# Deploy on every push to main.
+#
+# Copy into your application repository as .github/workflows/deploy.yml.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One deploy at a time, and let a newer commit win.
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: futuremoney/fargate-deployer@v1
+        with:
+          manifest: deploy/production.yaml
+          role-to-assume: arn:aws:iam::111122223333:role/github-actions-deploy

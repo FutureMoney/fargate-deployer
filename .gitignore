@@ -1,0 +1,16 @@
+node_modules/
+*.log
+.DS_Store
+
+# Build output. Released tags carry a built dist/ (see .github/workflows/release.yml),
+# but it is never committed to main.
+dist/
+
+# CDK
+cdk.out/
+cdk.context.json
+.cdk.staging/
+
+# Editors
+.idea/
+.vscode/

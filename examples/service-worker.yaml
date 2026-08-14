@@ -1,0 +1,37 @@
+# A background worker: a long-running service with no load balancer.
+#
+# Nothing routes traffic to it, so there is no listener, no target group and no
+# health check — ECS restarts the task if it exits. Scaling is on CPU only,
+# since there are no request metrics without an ALB.
+#
+# yaml-language-server: $schema=https://raw.githubusercontent.com/futuremoney/fargate-deployer/main/schema/manifest.schema.json
+kind: Service
+name: queue-worker
+account: "111122223333"
+region: us-east-1
+
+cluster:
+  name: production
+
+network:
+  vpcId: vpc-0abc123def4567890
+  subnets:
+    - subnet-0abc123def4567890
+    - subnet-0fed987cba6543210
+
+task:
+  cpu: 512
+  memory: 1024
+  command: ["node", "dist/worker.js"]
+  environment:
+    QUEUE_URL: https://sqs.us-east-1.amazonaws.com/111122223333/jobs
+  secrets:
+    DATABASE_URL: "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/postgres-AbCdEf:database_url::"
+
+service:
+  desiredCount: 2
+
+autoScaling:
+  minCapacity: 2
+  maxCapacity: 8
+  cpuTargetPercent: 65

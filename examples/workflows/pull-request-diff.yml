@@ -1,0 +1,33 @@
+# Show what a pull request would change in AWS, without deploying anything.
+#
+# `command: diff` builds the image and prints a CloudFormation diff. Pair it
+# with a read-only IAM role so the job cannot change infrastructure even by
+# accident.
+name: Infrastructure diff
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - 'Dockerfile'
+      - 'src/**'
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: futuremoney/fargate-deployer@v1
+        with:
+          manifest: deploy/production.yaml
+          command: diff
+          role-to-assume: arn:aws:iam::111122223333:role/github-actions-readonly
+          # Skip the build — a diff of the infrastructure does not need a real
+          # image, and this keeps pull-request runs fast.
+          image: 111122223333.dkr.ecr.us-east-1.amazonaws.com/api:latest

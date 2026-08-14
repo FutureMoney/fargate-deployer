@@ -1,0 +1,31 @@
+# The smallest useful service manifest.
+#
+# Everything not listed here is defaulted: 1 task, no auto scaling, a security
+# group and IAM roles created for you, logs to /ecs/hello-api kept for 30 days.
+#
+# yaml-language-server: $schema=https://raw.githubusercontent.com/futuremoney/fargate-deployer/main/schema/manifest.schema.json
+kind: Service
+name: hello-api
+account: "111122223333"
+region: us-east-1
+
+cluster:
+  name: my-cluster
+
+network:
+  vpcId: vpc-0abc123def4567890
+  subnets:
+    - subnet-0abc123def4567890
+    - subnet-0fed987cba6543210
+
+task:
+  cpu: 256
+  memory: 512
+  containerPort: 8080
+
+loadBalancer:
+  listenerArn: arn:aws:elasticloadbalancing:us-east-1:111122223333:listener/app/my-alb/1234567890abcdef/abcdef1234567890
+  securityGroupId: sg-0abc123def4567890
+  hostHeaders: hello.example.com
+  healthCheck:
+    path: /health

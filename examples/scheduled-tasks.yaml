@@ -1,0 +1,53 @@
+# Cron jobs: one EventBridge rule per entry, each starting a Fargate task.
+#
+# All schedules are UTC. Jobs that use the default cpu/memory share one task
+# definition; a job that overrides either gets its own.
+#
+# yaml-language-server: $schema=https://raw.githubusercontent.com/futuremoney/fargate-deployer/main/schema/manifest.schema.json
+kind: ScheduledTasks
+name: data-sync
+account: "111122223333"
+region: us-east-1
+
+cluster:
+  name: production
+
+network:
+  vpcId: vpc-0abc123def4567890
+  subnets:
+    - subnet-0abc123def4567890
+    - subnet-0fed987cba6543210
+
+task:
+  cpu: 256
+  memory: 512
+  environment:
+    NODE_ENV: production
+  secrets:
+    DATABASE_URL: "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/postgres-AbCdEf:database_url::"
+
+tasks:
+  - name: balances-sync
+    description: Pull account balances from the custodian
+    schedule: cron(0 6 * * ? *) # 06:00 UTC daily
+    command: ["node", "dist/jobs/balances-sync.js"]
+
+  - name: hourly-prices
+    schedule: rate(1 hour)
+    command: ["node", "dist/jobs/prices.js"]
+
+  - name: heavy-reconcile
+    schedule: cron(0 3 ? * SUN *) # 03:00 UTC on Sundays
+    command: ["node", "dist/jobs/reconcile.js"]
+    # Needs more room than the default — gets its own task definition.
+    cpu: 1024
+    memory: 4096
+    environment:
+      BATCH_SIZE: "500"
+    maxEventAgeMinutes: 60
+
+  - name: legacy-export
+    schedule: cron(30 2 * * ? *)
+    command: ["node", "dist/jobs/export.js"]
+    # Keeps the rule in place but stops it firing.
+    enabled: false

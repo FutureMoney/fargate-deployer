@@ -1,0 +1,256 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/futuremoney/fargate-deployer/main/schema/manifest.schema.json",
+  "title": "fargate-deployer manifest",
+  "description": "Declarative description of an ECS Fargate service or a set of scheduled tasks. Used for editor autocomplete and validation; the CLI performs the authoritative checks, including cross-field rules this schema cannot express.",
+  "type": "object",
+  "required": ["kind", "name", "account", "region", "cluster", "network", "task"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": ["Service", "ScheduledTasks"],
+      "description": "Service for a long-running container, ScheduledTasks for cron jobs."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,239}$",
+      "description": "Base name for the ECS service, task family and (by default) the stack."
+    },
+    "account": {
+      "type": "string",
+      "pattern": "^[0-9]{12}$",
+      "description": "12-digit AWS account ID. Quote it so YAML keeps leading zeros."
+    },
+    "region": { "type": "string", "description": "AWS region, e.g. us-east-1." },
+    "stackName": { "type": "string", "description": "CloudFormation stack name. Defaults to `name`." },
+    "tags": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Tags applied to every resource in the stack."
+    },
+    "cluster": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Name of an existing ECS cluster." }
+      }
+    },
+    "network": {
+      "type": "object",
+      "required": ["vpcId", "subnets"],
+      "additionalProperties": false,
+      "properties": {
+        "vpcId": { "type": "string", "pattern": "^vpc-[0-9a-f]{8,}$" },
+        "subnets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^subnet-[0-9a-f]{8,}$" },
+          "description": "Subnets to place tasks in. Two or more availability zones recommended."
+        },
+        "securityGroups": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^sg-[0-9a-f]{8,}$" },
+          "description": "Task security groups. Omit to have one created."
+        },
+        "assignPublicIp": {
+          "type": "boolean",
+          "description": "Needed for public subnets without a NAT gateway. Defaults to false."
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Omit either field to have that role created with the policies the task needs.",
+      "properties": {
+        "executionRoleArn": { "type": "string", "pattern": "^arn:[^:]*:iam::" },
+        "taskRoleArn": { "type": "string", "pattern": "^arn:[^:]*:iam::" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "required": ["cpu", "memory"],
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "enum": [256, 512, 1024, 2048, 4096, 8192, 16384],
+          "description": "Fargate CPU units. 1024 = 1 vCPU."
+        },
+        "memory": {
+          "type": "integer",
+          "minimum": 512,
+          "maximum": 122880,
+          "description": "MiB. Valid values depend on cpu."
+        },
+        "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "entryPoint": { "type": "array", "items": { "type": "string" } },
+        "command": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "argv form, e.g. [\"node\", \"dist/job.js\"]."
+        },
+        "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+        "secrets": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "pattern": "^arn:" },
+          "description": "Environment variable name to Secrets Manager or SSM ARN."
+        },
+        "logGroupName": { "type": "string", "description": "Defaults to /ecs/<name>." },
+        "logRetentionDays": {
+          "enum": [0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653],
+          "description": "0 means never expire. Defaults to 30."
+        },
+        "retainLogsOnDelete": {
+          "type": "boolean",
+          "description": "Keep the log group when the stack is deleted. Defaults to true."
+        },
+        "stopTimeoutSeconds": { "type": "integer", "minimum": 2, "maximum": 120 },
+        "ephemeralStorageGiB": { "type": "integer", "minimum": 21, "maximum": 200 },
+        "runtimePlatform": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpuArchitecture": {
+              "enum": ["X86_64", "ARM64"],
+              "description": "ARM64 runs on Graviton; the image must be built for it."
+            }
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Service only.",
+      "properties": {
+        "desiredCount": { "type": "integer", "minimum": 0 },
+        "minHealthyPercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "maxHealthyPercent": { "type": "integer", "minimum": 100, "maximum": 200 },
+        "enableExecuteCommand": { "type": "boolean" },
+        "circuitBreaker": { "type": "boolean" },
+        "healthCheckGracePeriodSeconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "loadBalancer": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Service only. Omit entirely for a service with no load balancer.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "listenerArn": {
+          "type": "string",
+          "pattern": "^arn:[^:]*:elasticloadbalancing:",
+          "description": "Attach a rule to this existing listener. Recommended."
+        },
+        "loadBalancerArn": {
+          "type": "string",
+          "pattern": "^arn:[^:]*:elasticloadbalancing:",
+          "description": "Create a listener on this load balancer."
+        },
+        "securityGroupId": {
+          "type": "string",
+          "pattern": "^sg-[0-9a-f]{8,}$",
+          "description": "The load balancer's security group, allowed into the task security group."
+        },
+        "listenerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "listenerProtocol": { "enum": ["HTTP", "HTTPS"] },
+        "certificateArn": { "type": "string", "pattern": "^arn:[^:]*:acm:" },
+        "targetPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "targetProtocol": { "enum": ["HTTP", "HTTPS"] },
+        "hostHeaders": {
+          "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
+        },
+        "pathPatterns": {
+          "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
+        },
+        "priority": { "type": "integer", "minimum": 1, "maximum": 50000 },
+        "defaultAction": {
+          "type": "boolean",
+          "description": "Make this the listener's default action instead of adding a rule."
+        },
+        "deregistrationDelaySeconds": { "type": "integer", "minimum": 0, "maximum": 3600 },
+        "targetGroupName": { "type": "string", "maxLength": 32 },
+        "manageSecurityGroupRules": { "type": "boolean" },
+        "healthCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "pattern": "^/" },
+            "intervalSeconds": { "type": "integer", "minimum": 5, "maximum": 300 },
+            "timeoutSeconds": { "type": "integer", "minimum": 2, "maximum": 120 },
+            "healthyThresholdCount": { "type": "integer", "minimum": 2, "maximum": 10 },
+            "unhealthyThresholdCount": { "type": "integer", "minimum": 2, "maximum": 10 },
+            "healthyHttpCodes": { "type": "string", "pattern": "^[0-9]{3}(-[0-9]{3})?(,[0-9]{3}(-[0-9]{3})?)*$" }
+          }
+        }
+      }
+    },
+    "autoScaling": {
+      "type": "object",
+      "required": ["maxCapacity"],
+      "additionalProperties": false,
+      "description": "Service only. Omit entirely for a fixed task count.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minCapacity": { "type": "integer", "minimum": 0 },
+        "maxCapacity": { "type": "integer", "minimum": 1 },
+        "cpuTargetPercent": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "memoryTargetPercent": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "requestsPerTarget": { "type": "integer", "minimum": 1 },
+        "scaleInCooldownSeconds": { "type": "integer", "minimum": 0 },
+        "scaleOutCooldownSeconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "description": "ScheduledTasks only.",
+      "items": {
+        "type": "object",
+        "required": ["name", "schedule"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+          "schedule": {
+            "type": "string",
+            "pattern": "^(cron\\(.+\\)|rate\\([0-9]+ +(minute|minutes|hour|hours|day|days)\\))$",
+            "description": "cron(0 6 * * ? *) or rate(1 hour). Always UTC."
+          },
+          "description": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "command": { "type": "array", "items": { "type": "string" } },
+          "cpu": { "enum": [256, 512, 1024, 2048, 4096, 8192, 16384] },
+          "memory": { "type": "integer", "minimum": 512, "maximum": 122880 },
+          "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+          "maxEventAgeMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440,
+            "description": "How long EventBridge keeps retrying to start the task. Not a task timeout."
+          },
+          "retryAttempts": { "type": "integer", "minimum": 0, "maximum": 185 }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "ScheduledTasks" } }, "required": ["kind"] },
+      "then": {
+        "required": ["tasks"],
+        "not": {
+          "anyOf": [
+            { "required": ["service"] },
+            { "required": ["loadBalancer"] },
+            { "required": ["autoScaling"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "Service" } }, "required": ["kind"] },
+      "then": { "not": { "required": ["tasks"] } }
+    }
+  ]
+}

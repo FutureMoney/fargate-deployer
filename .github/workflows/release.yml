@@ -1,0 +1,70 @@
+name: Release
+
+# Publishes a usable action tag.
+#
+# `dist/` is gitignored on main so pull requests never carry build output, but a
+# consumer running `uses: futuremoney/fargate-deployer@v1` needs it present. This
+# workflow builds on the release commit, commits `dist/` on a detached tree, and
+# force-moves both the exact tag (v1.2.3) and the floating major tag (v1) onto
+# that commit.
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and publish, e.g. v1.2.3'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Check the tag matches package.json
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$TAG" ]; then
+            echo "::error::package.json is $version but the tag is $TAG. Bump one of them."
+            exit 1
+          fi
+
+      - name: Publish the tag with dist/
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          major="${TAG%%.*}"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          git add --force dist
+          git commit --message "Release $TAG"
+
+          git tag --force --annotate "$TAG" --message "$TAG"
+          git tag --force --annotate "$major" --message "Latest $major release ($TAG)"
+          git push --force origin "refs/tags/$TAG" "refs/tags/$major"
+
+          echo "Published $TAG and moved $major to it." >> "$GITHUB_STEP_SUMMARY"

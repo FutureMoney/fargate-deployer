@@ -1,0 +1,367 @@
+name: 'Fargate Deployer'
+description: >-
+  Build, push and deploy a container to AWS ECS Fargate from a declarative
+  manifest — a long-running service behind an Application Load Balancer, or a
+  set of EventBridge-scheduled tasks.
+author: 'Corey Shaw'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'orange'
+
+inputs:
+  # -- what to deploy -------------------------------------------------------
+  manifest:
+    description: 'Path to the manifest file, e.g. deploy/prod.yaml'
+    required: true
+  image:
+    description: >-
+      Deploy this exact image instead of building one. Setting it skips the
+      build and push steps entirely.
+    required: false
+    default: ''
+  command:
+    description: >-
+      deploy | diff | synth | validate | destroy.
+      Use `diff` on pull requests to preview changes, `validate` to check the
+      manifest without touching AWS.
+    required: false
+    default: 'deploy'
+
+  # -- AWS authentication ---------------------------------------------------
+  role-to-assume:
+    description: >-
+      IAM role ARN to assume via GitHub OIDC. The recommended way to
+      authenticate — no long-lived keys in your repository.
+      Requires `permissions: id-token: write` on the job.
+    required: false
+    default: ''
+  role-session-name:
+    description: 'Session name for the assumed role.'
+    required: false
+    default: 'fargate-deployer'
+  aws-access-key-id:
+    description: 'Static access key. Only needed if you cannot use OIDC.'
+    required: false
+    default: ''
+  aws-secret-access-key:
+    description: 'Static secret key. Only needed if you cannot use OIDC.'
+    required: false
+    default: ''
+  aws-region:
+    description: 'Override the region. Defaults to the manifest `region`.'
+    required: false
+    default: ''
+
+  # -- image build ----------------------------------------------------------
+  ecr-repository:
+    description: 'ECR repository to push to. Defaults to the manifest `name`.'
+    required: false
+    default: ''
+  create-ecr-repository:
+    description: 'Create the ECR repository if it does not exist yet.'
+    required: false
+    default: 'true'
+  image-tag:
+    description: 'Tag for the built image. Defaults to the commit SHA.'
+    required: false
+    default: ''
+  push-latest:
+    description: 'Also tag the image `latest`.'
+    required: false
+    default: 'false'
+  dockerfile:
+    description: 'Path to the Dockerfile.'
+    required: false
+    default: 'Dockerfile'
+  context:
+    description: 'Docker build context.'
+    required: false
+    default: '.'
+  build-args:
+    description: 'Build arguments, one KEY=VALUE per line.'
+    required: false
+    default: ''
+  build-secrets:
+    description: >-
+      Build secrets, one KEY=VALUE per line, exposed to the build via
+      `RUN --mount=type=secret,id=KEY`. Prefer this over build-args for
+      anything sensitive — build args are visible in the image history.
+    required: false
+    default: ''
+  platforms:
+    description: >-
+      Target platforms. Defaults to matching the manifest architecture
+      (linux/arm64 when `task.runtimePlatform.cpuArchitecture: ARM64`).
+    required: false
+    default: ''
+  provenance:
+    description: >-
+      Attach SLSA provenance to the pushed image. Off by default: the resulting
+      multi-manifest index is not usable as an ECS task image.
+    required: false
+    default: 'false'
+
+  # -- deployment behaviour -------------------------------------------------
+  bootstrap:
+    description: >-
+      Run `cdk bootstrap` for the target account and region first. Needed once
+      per account and region; leave it off afterwards.
+    required: false
+    default: 'false'
+  wait-for-stability:
+    description: 'After deploying a Service, wait until ECS reports it stable.'
+    required: false
+    default: 'true'
+  cdk-args:
+    description: 'Extra arguments passed straight through to the CDK CLI.'
+    required: false
+    default: ''
+  working-directory:
+    description: 'Directory that `manifest` and `context` are relative to.'
+    required: false
+    default: '.'
+  node-version:
+    description: 'Node.js version used to run the deployer itself.'
+    required: false
+    default: '20'
+
+outputs:
+  image:
+    description: 'Full image URI that was deployed'
+    value: ${{ steps.image.outputs.uri }}
+  image-digest:
+    description: 'Digest of the pushed image (empty when the image was not built here)'
+    value: ${{ steps.build.outputs.digest }}
+  stack-name:
+    description: 'CloudFormation stack name'
+    value: ${{ steps.inspect.outputs.stack-name }}
+  service-name:
+    description: 'ECS service name (Service manifests only)'
+    value: ${{ steps.inspect.outputs.name }}
+  cluster:
+    description: 'ECS cluster the stack deployed into'
+    value: ${{ steps.inspect.outputs.cluster }}
+  region:
+    description: 'AWS region used'
+    value: ${{ steps.inspect.outputs.region }}
+  account:
+    description: 'AWS account ID from the manifest'
+    value: ${{ steps.inspect.outputs.account }}
+  kind:
+    description: 'Service or ScheduledTasks'
+    value: ${{ steps.inspect.outputs.kind }}
+  log-group:
+    description: 'CloudWatch log group the tasks write to'
+    value: ${{ steps.inspect.outputs.log-group }}
+
+runs:
+  using: composite
+  steps:
+    # ---------------------------------------------------------------- setup
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    # The deployer's dependencies live with the action, so your repository needs
+    # no Node.js toolchain, no lockfile and no CDK of its own.
+    - name: Cache deployer dependencies
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.action_path }}/node_modules
+        key: fargate-deployer-${{ runner.os }}-node${{ inputs.node-version }}-${{ github.action_ref || 'local' }}
+
+    - name: Install deployer
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+
+        install() {
+          if [ -f package-lock.json ]; then
+            npm ci "$@" --no-audit --no-fund
+          else
+            npm install "$@" --no-audit --no-fund
+          fi
+        }
+
+        if [ -f dist/bin/cli.js ]; then
+          # A released tag ships a prebuilt dist/ and needs runtime deps only.
+          if [ -d node_modules/aws-cdk-lib ]; then
+            echo "Using cached deployer dependencies."
+          else
+            echo "Installing deployer runtime dependencies..."
+            install --omit=dev
+          fi
+        else
+          # A branch reference has no prebuilt dist/, so build it here.
+          echo "No prebuilt dist/ — building the deployer from source."
+          install
+          npm run build
+        fi
+
+    # Validates the manifest and surfaces region/account before anything talks
+    # to AWS, so a typo fails in seconds rather than after a build.
+    - name: Read manifest
+      id: inspect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        node "${{ github.action_path }}/dist/bin/cli.js" inspect \
+          --manifest "${{ inputs.manifest }}" | tee -a "$GITHUB_OUTPUT"
+
+    # ------------------------------------------------------------------ auth
+    - name: Configure AWS credentials (OIDC)
+      if: inputs.role-to-assume != '' && inputs.command != 'validate'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        role-session-name: ${{ inputs.role-session-name }}
+        aws-region: ${{ inputs.aws-region || steps.inspect.outputs.region }}
+
+    - name: Configure AWS credentials (access keys)
+      if: inputs.role-to-assume == '' && inputs.aws-access-key-id != '' && inputs.command != 'validate'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region || steps.inspect.outputs.region }}
+
+    # ----------------------------------------------------------- build image
+    - name: Log in to Amazon ECR
+      id: ecr
+      if: inputs.image == '' && inputs.command != 'validate'
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Ensure the ECR repository exists
+      if: inputs.image == '' && inputs.create-ecr-repository == 'true' && inputs.command != 'validate'
+      shell: bash
+      env:
+        REPOSITORY: ${{ inputs.ecr-repository || steps.inspect.outputs.name }}
+        REGION: ${{ inputs.aws-region || steps.inspect.outputs.region }}
+      run: |
+        set -euo pipefail
+        if aws ecr describe-repositories --region "$REGION" --repository-names "$REPOSITORY" >/dev/null 2>&1; then
+          echo "Repository $REPOSITORY already exists."
+        else
+          echo "Creating ECR repository $REPOSITORY..."
+          aws ecr create-repository \
+            --region "$REGION" \
+            --repository-name "$REPOSITORY" \
+            --image-scanning-configuration scanOnPush=true \
+            --image-tag-mutability MUTABLE >/dev/null
+        fi
+
+    - name: Resolve image URI
+      id: image
+      shell: bash
+      env:
+        GIVEN: ${{ inputs.image }}
+        REGISTRY: ${{ steps.ecr.outputs.registry }}
+        REPOSITORY: ${{ inputs.ecr-repository || steps.inspect.outputs.name }}
+        TAG: ${{ inputs.image-tag || github.sha }}
+      run: |
+        set -euo pipefail
+        if [ -n "$GIVEN" ]; then
+          echo "uri=$GIVEN" >> "$GITHUB_OUTPUT"
+        else
+          echo "uri=${REGISTRY}/${REPOSITORY}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "latest=${REGISTRY}/${REPOSITORY}:latest" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Set up QEMU
+      if: inputs.image == '' && contains(inputs.platforms || steps.inspect.outputs.architecture, 'arm64')
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Buildx
+      if: inputs.image == '' && inputs.command != 'validate'
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push
+      id: build
+      if: inputs.image == '' && inputs.command != 'validate'
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.working-directory }}/${{ inputs.context }}
+        file: ${{ inputs.working-directory }}/${{ inputs.context }}/${{ inputs.dockerfile }}
+        push: true
+        platforms: ${{ inputs.platforms || steps.inspect.outputs.architecture }}
+        provenance: ${{ inputs.provenance }}
+        tags: |
+          ${{ steps.image.outputs.uri }}
+          ${{ inputs.push-latest == 'true' && steps.image.outputs.latest || '' }}
+        build-args: ${{ inputs.build-args }}
+        secrets: ${{ inputs.build-secrets }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # --------------------------------------------------------------- deploy
+    - name: ${{ inputs.command }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FARGATE_DEPLOYER_MANIFEST: ${{ inputs.manifest }}
+        FARGATE_DEPLOYER_IMAGE: ${{ steps.image.outputs.uri }}
+        BOOTSTRAP: ${{ inputs.bootstrap }}
+        CDK_ARGS: ${{ inputs.cdk-args }}
+        COMMAND: ${{ inputs.command }}
+      run: |
+        set -euo pipefail
+        args=("$COMMAND")
+        if [ "$BOOTSTRAP" = "true" ]; then
+          args+=(--bootstrap)
+        fi
+        if [ -n "$CDK_ARGS" ]; then
+          # Deliberate word splitting: cdk-args is a list of flags.
+          # shellcheck disable=SC2206
+          args+=(-- $CDK_ARGS)
+        fi
+        node "${{ github.action_path }}/dist/bin/cli.js" "${args[@]}"
+
+    - name: Wait for service stability
+      if: >-
+        inputs.command == 'deploy' &&
+        inputs.wait-for-stability == 'true' &&
+        steps.inspect.outputs.kind == 'Service'
+      shell: bash
+      env:
+        REGION: ${{ inputs.aws-region || steps.inspect.outputs.region }}
+        CLUSTER: ${{ steps.inspect.outputs.cluster }}
+        SERVICE: ${{ steps.inspect.outputs.name }}
+      run: |
+        set -euo pipefail
+        echo "Waiting for $SERVICE to reach a steady state..."
+        if ! aws ecs wait services-stable --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE"; then
+          echo "::error::$SERVICE did not stabilise. Recent events:"
+          aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].events[0:10].[createdAt,message]' --output text
+          exit 1
+        fi
+
+    - name: Job summary
+      if: always() && inputs.command == 'deploy'
+      shell: bash
+      env:
+        NAME: ${{ steps.inspect.outputs.name }}
+        STACK: ${{ steps.inspect.outputs.stack-name }}
+        KIND: ${{ steps.inspect.outputs.kind }}
+        CLUSTER: ${{ steps.inspect.outputs.cluster }}
+        ACCOUNT: ${{ steps.inspect.outputs.account }}
+        REGION: ${{ inputs.aws-region || steps.inspect.outputs.region }}
+        IMAGE: ${{ steps.image.outputs.uri }}
+        LOG_GROUP: ${{ steps.inspect.outputs.log-group }}
+      run: |
+        {
+          echo "### 🚀 $NAME"
+          echo ""
+          echo "| | |"
+          echo "|---|---|"
+          echo "| Stack | \`$STACK\` |"
+          echo "| Kind | $KIND |"
+          echo "| Cluster | \`$CLUSTER\` |"
+          echo "| Account / region | \`$ACCOUNT\` / \`$REGION\` |"
+          echo "| Image | \`$IMAGE\` |"
+          echo "| Logs | [\`$LOG_GROUP\`](https://$REGION.console.aws.amazon.com/cloudwatch/home?region=$REGION#logsV2:log-groups/log-group/$(echo "$LOG_GROUP" | sed 's|/|%252F|g')) |"
+        } >> "$GITHUB_STEP_SUMMARY"

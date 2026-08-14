@@ -1,0 +1,242 @@
+import * as cdk from 'aws-cdk-lib';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import { Construct } from 'constructs';
+import { buildContext, buildTaskDefinition, StackContext } from './base';
+import { ResolvedLoadBalancer, ResolvedServiceConfig } from './types';
+
+export interface FargateServiceStackProps extends cdk.StackProps {
+  config: ResolvedServiceConfig;
+  /** Full image URI to deploy, e.g. `111122223333.dkr.ecr.us-east-1.amazonaws.com/api:abc123`. */
+  image: string;
+}
+
+/**
+ * A long-running Fargate service, optionally registered behind an existing
+ * Application Load Balancer.
+ *
+ * This stack attaches to infrastructure you already own — cluster, VPC, subnets,
+ * load balancer, certificate — and creates only what belongs to this one
+ * service: the task definition, the service, its target group and listener rule,
+ * its log group, and (when you did not supply them) a security group and IAM
+ * roles.
+ */
+export class FargateServiceStack extends cdk.Stack {
+  readonly service: ecs.FargateService;
+  readonly targetGroup?: elbv2.ApplicationTargetGroup;
+
+  constructor(scope: Construct, id: string, props: FargateServiceStackProps) {
+    super(scope, id, props);
+
+    const { config, image } = props;
+    const context = buildContext(this, config, image);
+
+    const { taskDefinition } = buildTaskDefinition(this, config, context, {
+      containerPort: config.task.containerPort,
+    });
+
+    this.service = new ecs.FargateService(this, 'Service', {
+      cluster: context.cluster,
+      taskDefinition,
+      serviceName: config.name,
+      desiredCount: config.service.desiredCount,
+      minHealthyPercent: config.service.minHealthyPercent,
+      maxHealthyPercent: config.service.maxHealthyPercent,
+      enableExecuteCommand: config.service.enableExecuteCommand,
+      circuitBreaker: config.service.circuitBreaker ? { enable: true, rollback: true } : undefined,
+      propagateTags: ecs.PropagatedTagSource.SERVICE,
+      assignPublicIp: config.network.assignPublicIp,
+      securityGroups: context.securityGroups,
+      vpcSubnets: context.subnetSelection,
+      ...(config.service.healthCheckGracePeriodSeconds !== undefined && {
+        healthCheckGracePeriod: cdk.Duration.seconds(config.service.healthCheckGracePeriodSeconds),
+      }),
+    });
+
+    if (config.loadBalancer) {
+      this.targetGroup = this.attachToLoadBalancer(config, context, config.loadBalancer);
+    }
+
+    if (config.autoScaling) {
+      this.configureAutoScaling(config, this.targetGroup);
+    }
+
+    this.addOutputs(config);
+  }
+
+  private attachToLoadBalancer(
+    config: ResolvedServiceConfig,
+    context: StackContext,
+    lb: ResolvedLoadBalancer,
+  ): elbv2.ApplicationTargetGroup {
+    const albSecurityGroup = lb.securityGroupId
+      ? ec2.SecurityGroup.fromSecurityGroupId(this, 'AlbSecurityGroup', lb.securityGroupId, {
+          mutable: false,
+        })
+      : undefined;
+
+    // Let the ALB reach the container. On a security group we created this is a
+    // plain ingress rule; on an imported one CDK emits a standalone
+    // AWS::EC2::SecurityGroupIngress so the shared group itself is untouched.
+    if (lb.manageSecurityGroupRules && albSecurityGroup) {
+      for (const sg of context.securityGroups) {
+        sg.addIngressRule(
+          albSecurityGroup,
+          ec2.Port.tcp(lb.targetPort),
+          `Load balancer to ${config.name} on ${lb.targetPort}`,
+        );
+      }
+    }
+
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'TargetGroup', {
+      vpc: context.vpc,
+      port: lb.targetPort,
+      protocol:
+        lb.targetProtocol === 'HTTPS' ? elbv2.ApplicationProtocol.HTTPS : elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      targetGroupName: lb.targetGroupName,
+      deregistrationDelay: cdk.Duration.seconds(lb.deregistrationDelaySeconds),
+      healthCheck: {
+        path: lb.healthCheck.path,
+        protocol:
+          lb.targetProtocol === 'HTTPS' ? elbv2.Protocol.HTTPS : elbv2.Protocol.HTTP,
+        interval: cdk.Duration.seconds(lb.healthCheck.intervalSeconds),
+        timeout: cdk.Duration.seconds(lb.healthCheck.timeoutSeconds),
+        healthyThresholdCount: lb.healthCheck.healthyThresholdCount,
+        unhealthyThresholdCount: lb.healthCheck.unhealthyThresholdCount,
+        healthyHttpCodes: lb.healthCheck.healthyHttpCodes,
+      },
+    });
+
+    targetGroup.addTarget(this.service);
+
+    const listener = this.resolveListener(context, lb, albSecurityGroup);
+
+    if (lb.defaultAction) {
+      listener.addTargetGroups('DefaultRule', { targetGroups: [targetGroup] });
+      return targetGroup;
+    }
+
+    const conditions: elbv2.ListenerCondition[] = [];
+    if (lb.hostHeaders.length > 0) {
+      conditions.push(elbv2.ListenerCondition.hostHeaders(lb.hostHeaders));
+    }
+    if (lb.pathPatterns.length > 0) {
+      conditions.push(elbv2.ListenerCondition.pathPatterns(lb.pathPatterns));
+    }
+
+    listener.addTargetGroups('Rule', {
+      priority: lb.priority,
+      conditions,
+      targetGroups: [targetGroup],
+    });
+
+    return targetGroup;
+  }
+
+  /**
+   * Attach to the listener named in the manifest, or create one on the given
+   * load balancer.
+   *
+   * The load balancer is only looked up in the create case. Attaching by
+   * listener ARN — the common path — needs no describe permissions on the ALB
+   * at all, which keeps the deploy policy small.
+   */
+  private resolveListener(
+    context: StackContext,
+    lb: ResolvedLoadBalancer,
+    albSecurityGroup?: ec2.ISecurityGroup,
+  ): elbv2.IApplicationListener {
+    if (lb.listenerArn) {
+      return elbv2.ApplicationListener.fromApplicationListenerAttributes(this, 'Listener', {
+        listenerArn: lb.listenerArn,
+        // Only consulted if something asks CDK to open the listener's security
+        // group, which nothing here does. Pass the ALB's group when we know it
+        // so any such rule would land on the right group rather than the tasks'.
+        securityGroup: albSecurityGroup ?? context.securityGroups[0],
+      });
+    }
+
+    const loadBalancer = elbv2.ApplicationLoadBalancer.fromLookup(this, 'LoadBalancer', {
+      loadBalancerArn: lb.loadBalancerArn,
+    });
+
+    const listener = new elbv2.ApplicationListener(this, 'Listener', {
+      loadBalancer,
+      port: lb.listenerPort,
+      protocol:
+        lb.listenerProtocol === 'HTTPS'
+          ? elbv2.ApplicationProtocol.HTTPS
+          : elbv2.ApplicationProtocol.HTTP,
+      // A listener with no rules needs a default action; 404 until a rule matches.
+      defaultAction: elbv2.ListenerAction.fixedResponse(404, {
+        contentType: 'text/plain',
+        messageBody: 'Not Found',
+      }),
+      ...(lb.certificateArn && {
+        certificates: [acm.Certificate.fromCertificateArn(this, 'Certificate', lb.certificateArn)],
+      }),
+    });
+
+    return listener;
+  }
+
+  private configureAutoScaling(
+    config: ResolvedServiceConfig,
+    targetGroup?: elbv2.ApplicationTargetGroup,
+  ): void {
+    const as = config.autoScaling!;
+    const scaling = this.service.autoScaleTaskCount({
+      minCapacity: as.minCapacity,
+      maxCapacity: as.maxCapacity,
+    });
+
+    const scaleIn = cdk.Duration.seconds(as.scaleInCooldownSeconds);
+    const scaleOut = cdk.Duration.seconds(as.scaleOutCooldownSeconds);
+
+    if (as.cpuTargetPercent !== undefined) {
+      scaling.scaleOnCpuUtilization('CpuScaling', {
+        targetUtilizationPercent: as.cpuTargetPercent,
+        scaleInCooldown: scaleIn,
+        scaleOutCooldown: scaleOut,
+      });
+    }
+    if (as.memoryTargetPercent !== undefined) {
+      scaling.scaleOnMemoryUtilization('MemoryScaling', {
+        targetUtilizationPercent: as.memoryTargetPercent,
+        scaleInCooldown: scaleIn,
+        scaleOutCooldown: scaleOut,
+      });
+    }
+    if (as.requestsPerTarget !== undefined && targetGroup) {
+      scaling.scaleOnRequestCount('RequestScaling', {
+        requestsPerTarget: as.requestsPerTarget,
+        targetGroup,
+        scaleInCooldown: scaleIn,
+        scaleOutCooldown: scaleOut,
+      });
+    }
+  }
+
+  private addOutputs(config: ResolvedServiceConfig): void {
+    new cdk.CfnOutput(this, 'ServiceNameOutput', {
+      key: 'ServiceName',
+      value: this.service.serviceName,
+      description: 'ECS service name',
+    });
+    new cdk.CfnOutput(this, 'ClusterNameOutput', {
+      key: 'ClusterName',
+      value: config.clusterName,
+      description: 'ECS cluster name',
+    });
+    if (this.targetGroup) {
+      new cdk.CfnOutput(this, 'TargetGroupArnOutput', {
+        key: 'TargetGroupArn',
+        value: this.targetGroup.targetGroupArn,
+        description: 'ALB target group ARN',
+      });
+    }
+  }
+}

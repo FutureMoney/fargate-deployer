@@ -1,0 +1,42 @@
+# Staging on every merge, production behind a manual approval.
+#
+# One manifest per environment; the `environment:` key makes GitHub apply that
+# environment's protection rules and secrets.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      image: ${{ steps.deploy.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: deploy
+        uses: futuremoney/fargate-deployer@v1
+        with:
+          manifest: deploy/staging.yaml
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
+
+  production:
+    needs: staging
+    runs-on: ubuntu-latest
+    # Add required reviewers to this environment in repository settings to make
+    # the job wait for an approval.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: futuremoney/fargate-deployer@v1
+        with:
+          manifest: deploy/production.yaml
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
+          # Promote the exact image staging ran, rather than rebuilding it.
+          image: ${{ needs.staging.outputs.image }}

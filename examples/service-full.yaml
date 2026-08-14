@@ -1,0 +1,89 @@
+# A production service using most of what the manifest offers.
+#
+# yaml-language-server: $schema=https://raw.githubusercontent.com/futuremoney/fargate-deployer/main/schema/manifest.schema.json
+kind: Service
+name: rest-api-prod
+stackName: rest-api-prod
+account: "111122223333"
+region: us-east-1
+
+tags:
+  Team: platform
+  Environment: production
+
+cluster:
+  name: production
+
+network:
+  vpcId: vpc-0abc123def4567890
+  subnets:
+    - subnet-0abc123def4567890
+    - subnet-0fed987cba6543210
+  securityGroups:
+    - sg-0111111111111111a
+  assignPublicIp: false
+
+# Omit this block to have both roles created with least-privilege policies.
+roles:
+  executionRoleArn: arn:aws:iam::111122223333:role/ecsTaskExecutionRole
+  taskRoleArn: arn:aws:iam::111122223333:role/rest-api-task-role
+
+task:
+  cpu: 512
+  memory: 1024
+  containerPort: 3000
+  runtimePlatform:
+    cpuArchitecture: ARM64
+  environment:
+    NODE_ENV: production
+    LOG_LEVEL: info
+    # Expanded from the process environment at deploy time.
+    RELEASE_SHA: ${GITHUB_SHA}
+  secrets:
+    # Whole secret value:
+    STRIPE_KEY: "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/stripe-AbCdEf"
+    # One key out of a JSON secret:
+    DATABASE_URL: "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/postgres-AbCdEf:database_url::"
+    # SSM Parameter Store also works:
+    FEATURE_FLAGS: "arn:aws:ssm:us-east-1:111122223333:parameter/prod/feature-flags"
+  logRetentionDays: 90
+  stopTimeoutSeconds: 60
+
+service:
+  desiredCount: 2
+  minHealthyPercent: 100
+  maxHealthyPercent: 200
+  enableExecuteCommand: true
+  circuitBreaker: true
+  healthCheckGracePeriodSeconds: 60
+
+loadBalancer:
+  # Attach a rule to a listener several services share. This is the usual shape.
+  listenerArn: arn:aws:elasticloadbalancing:us-east-1:111122223333:listener/app/prod-alb/1234567890abcdef/abcdef1234567890
+  securityGroupId: sg-0222222222222222b
+  hostHeaders:
+    - api.example.com
+    - www-api.example.com
+  pathPatterns:
+    - /v1/*
+  # Omit to derive a stable priority from the service name.
+  priority: 100
+  targetPort: 3000
+  targetProtocol: HTTP
+  deregistrationDelaySeconds: 30
+  healthCheck:
+    path: /healthz
+    intervalSeconds: 15
+    timeoutSeconds: 5
+    healthyThresholdCount: 2
+    unhealthyThresholdCount: 3
+    healthyHttpCodes: "200-299"
+
+autoScaling:
+  minCapacity: 2
+  maxCapacity: 10
+  cpuTargetPercent: 70
+  memoryTargetPercent: 80
+  requestsPerTarget: 1000
+  scaleInCooldownSeconds: 300
+  scaleOutCooldownSeconds: 60
