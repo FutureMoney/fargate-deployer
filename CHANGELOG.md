@@ -17,8 +17,14 @@ every account-specific value moved out of the code and into the manifest.
 ### Added
 
 - **`Fargate Deployer` composite action** — builds, pushes and deploys in one
-  step. OIDC or static credentials, ECR repository creation, buildx with layer
-  caching, wait-for-stability with service events on failure, and a job summary.
+  step. ECR repository creation, buildx with layer caching, wait-for-stability
+  with service events on failure, and a job summary.
+- **Every AWS credential shape** — GitHub OIDC, static IAM user keys, temporary
+  STS credentials with a session token, static keys chaining into a role
+  (with optional external ID), or whatever credentials the job already has.
+- **A `workflow_call` wrapper** (`.github/workflows/fargate-deploy.yml`) at full
+  input and output parity with the action, for callers who pass AWS credentials
+  through a `secrets:` block — which an action cannot accept.
 - **`fargate-deployer` CLI** — `deploy`, `diff`, `synth`, `destroy`, `validate`
   and `inspect`. The action is a thin wrapper, so any CI system or a laptop can
   run the same command.

@@ -40,12 +40,30 @@ inputs:
     description: 'Session name for the assumed role.'
     required: false
     default: 'fargate-deployer'
+  role-external-id:
+    description: 'External ID, if the role trust policy requires one.'
+    required: false
+    default: ''
+  role-duration-seconds:
+    description: >-
+      Lifetime of the assumed-role session. Raise it if a slow rollout plus
+      wait-for-stability can outlast the default hour.
+    required: false
+    default: ''
   aws-access-key-id:
-    description: 'Static access key. Only needed if you cannot use OIDC.'
+    description: >-
+      Static access key. Use when OIDC is not available. May also be combined
+      with `role-to-assume` to assume a role from those credentials.
     required: false
     default: ''
   aws-secret-access-key:
-    description: 'Static secret key. Only needed if you cannot use OIDC.'
+    description: 'Secret key that goes with `aws-access-key-id`.'
+    required: false
+    default: ''
+  aws-session-token:
+    description: >-
+      Session token, required when the key and secret are temporary STS
+      credentials rather than a long-lived IAM user.
     required: false
     default: ''
   aws-region:
@@ -213,21 +231,32 @@ runs:
           --manifest "${{ inputs.manifest }}" | tee -a "$GITHUB_OUTPUT"
 
     # ------------------------------------------------------------------ auth
-    - name: Configure AWS credentials (OIDC)
-      if: inputs.role-to-assume != '' && inputs.command != 'validate'
+    #
+    # One step covers every combination, because the inputs it does not receive
+    # are simply absent:
+    #
+    #   role-to-assume only ................. OIDC (needs id-token: write)
+    #   key + secret ........................ static IAM user credentials
+    #   key + secret + session token ........ temporary STS credentials
+    #   key + secret + role-to-assume ....... assume a role from those keys
+    #
+    # Supplying none of them is also valid: the step is skipped and whatever
+    # credentials the job already has — set by an earlier step, or by a
+    # self-hosted runner's instance profile — are used as they are.
+    - name: Configure AWS credentials
+      if: >-
+        inputs.command != 'validate' &&
+        (inputs.role-to-assume != '' || inputs.aws-access-key-id != '')
       uses: aws-actions/configure-aws-credentials@v4
       with:
+        aws-region: ${{ inputs.aws-region || steps.inspect.outputs.region }}
         role-to-assume: ${{ inputs.role-to-assume }}
         role-session-name: ${{ inputs.role-session-name }}
-        aws-region: ${{ inputs.aws-region || steps.inspect.outputs.region }}
-
-    - name: Configure AWS credentials (access keys)
-      if: inputs.role-to-assume == '' && inputs.aws-access-key-id != '' && inputs.command != 'validate'
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
+        role-external-id: ${{ inputs.role-external-id }}
+        role-duration-seconds: ${{ inputs.role-duration-seconds }}
         aws-access-key-id: ${{ inputs.aws-access-key-id }}
         aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
-        aws-region: ${{ inputs.aws-region || steps.inspect.outputs.region }}
+        aws-session-token: ${{ inputs.aws-session-token }}
 
     # ----------------------------------------------------------- build image
     - name: Log in to Amazon ECR

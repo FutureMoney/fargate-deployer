@@ -11,6 +11,10 @@ GitHub Actions permission to do it.
 - [Finding the ARNs your manifest needs](#finding-the-arns-your-manifest-needs)
 - [Starting from nothing](#starting-from-nothing)
 - [Using static access keys instead](#using-static-access-keys-instead)
+  - [Temporary credentials](#temporary-credentials)
+  - [Keys that chain into a role](#keys-that-chain-into-a-role)
+  - [Credentials the job already has](#credentials-the-job-already-has)
+  - [Long deployments](#long-deployments)
 - [Tightening the blast radius](#tightening-the-blast-radius)
 
 ---
@@ -301,6 +305,63 @@ repository secrets:
 
 The IAM user needs the same permissions policy as the role above. Rotate the
 keys on a schedule, and move to OIDC when you can.
+
+### Temporary credentials
+
+Credentials minted by STS — an assumed-role session handed to the job, or an
+IAM user session created with MFA — also carry a session token. Without it AWS
+rejects the pair:
+
+```yaml
+    aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+```
+
+### Keys that chain into a role
+
+The common pattern in accounts that predate OIDC: a low-privilege CI user whose
+only real permission is to assume a deploy role. Give both, and the keys are
+used to assume the role rather than to deploy directly:
+
+```yaml
+    aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    role-to-assume: arn:aws:iam::111122223333:role/deploy
+    role-external-id: ${{ secrets.AWS_EXTERNAL_ID }}   # if the trust policy asks for one
+```
+
+Here the *deploy role* needs the permissions policy above; the IAM user needs
+only `sts:AssumeRole` on it. The role's trust policy must name the user or its
+account as principal.
+
+### Credentials the job already has
+
+If you configure credentials yourself in an earlier step, or run on a
+self-hosted runner with an instance profile, pass none of these inputs. The
+credential step is skipped entirely and the ambient credentials are used:
+
+```yaml
+- uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: arn:aws:iam::111122223333:role/deploy
+    aws-region: us-east-1
+
+- uses: futuremoney/fargate-deployer@v1
+  with:
+    manifest: deploy/production.yaml
+```
+
+### Long deployments
+
+An assumed-role session lasts an hour by default. A large rolling deploy plus
+`wait-for-stability` can outlast that, and the failure looks like an expired
+token partway through the wait. Raise it — up to the role's maximum session
+duration:
+
+```yaml
+    role-duration-seconds: 7200
+```
 
 ## Tightening the blast radius
 

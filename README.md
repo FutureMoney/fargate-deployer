@@ -29,6 +29,7 @@ a manifest — no CDK app, no Node.js toolchain, no CloudFormation templates, no
 - [Action inputs](#action-inputs)
 - [Action outputs](#action-outputs)
 - [Scheduled tasks](#scheduled-tasks)
+- [Calling it as a reusable workflow](#calling-it-as-a-reusable-workflow)
 - [Running it outside GitHub Actions](#running-it-outside-github-actions)
 - [Using the constructs in your own CDK app](#using-the-constructs-in-your-own-cdk-app)
 - [Documentation](#documentation)
@@ -188,9 +189,28 @@ Only `manifest` is required.
 | --- | --- | --- |
 | `role-to-assume` | — | IAM role ARN to assume via GitHub OIDC. **Recommended.** Needs `permissions: id-token: write`. |
 | `role-session-name` | `fargate-deployer` | Session name for the assumed role. |
-| `aws-access-key-id` | — | Static key, if you cannot use OIDC. |
-| `aws-secret-access-key` | — | Static secret, if you cannot use OIDC. |
+| `role-external-id` | — | External ID, if the role's trust policy requires one. |
+| `role-duration-seconds` | `3600` | Session lifetime. Raise it if a slow rollout can outlast an hour. |
+| `aws-access-key-id` | — | Static access key, when OIDC is not available. |
+| `aws-secret-access-key` | — | Secret key that goes with it. |
+| `aws-session-token` | — | Required when the key and secret are *temporary* STS credentials. |
 | `aws-region` | *from manifest* | Override the region. |
+
+Credentials go in `with:`, not `secrets:` — an action has no `secrets:` block.
+The values are still masked in logs. If you would rather pass them as `secrets:`,
+[call the reusable workflow](#calling-it-as-a-reusable-workflow) instead. A
+worked example using access keys is in
+[`examples/workflows/iam-access-keys.yml`](examples/workflows/iam-access-keys.yml).
+
+Four combinations are supported, and one non-combination:
+
+| What you set | What happens |
+| --- | --- |
+| `role-to-assume` | OIDC. No stored credentials. **Recommended.** |
+| `aws-access-key-id` + `aws-secret-access-key` | Static IAM user credentials. |
+| …plus `aws-session-token` | Temporary STS credentials. |
+| …plus `role-to-assume` | Assume that role *from* those keys — the usual pattern when a low-privilege CI user chains into a deploy role. |
+| Nothing | The credential step is skipped, and whatever the job already has is used — credentials set by an earlier step, or a self-hosted runner's instance profile. |
 
 ### Image build
 
@@ -262,6 +282,36 @@ tasks:
 
 See [`docs/scheduled-tasks.md`](docs/scheduled-tasks.md) for schedule syntax,
 per-job overrides, and how to disable a job without deleting it.
+
+## Calling it as a reusable workflow
+
+The action is the primary interface, but a `workflow_call` wrapper ships
+alongside it for callers who prefer that shape — most often because AWS
+credentials already arrive through a `secrets:` block, which an action cannot
+accept:
+
+```yaml
+jobs:
+  deploy:
+    uses: futuremoney/fargate-deployer/.github/workflows/fargate-deploy.yml@v1
+    with:
+      manifest: deploy/development.yaml
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_DEVELOPMENT }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEVELOPMENT }}
+```
+
+It brings its own job, so there is no `runs-on`, no `steps`, and no
+`actions/checkout`. Extra inputs it adds over the action: `environment` (to
+apply a GitHub environment's protection rules) and `runner`. Extra secrets:
+`AWS_SESSION_TOKEN` and `BUILD_SECRETS`.
+
+Two things to know. Reusable workflows cannot be listed on the Marketplace —
+only actions can — so this is referenced by path rather than by name. And it
+adds a job boundary, so `permissions` and `environment` apply to the whole
+called workflow rather than to one step.
+
+See [`examples/workflows/reusable-workflow-with-secrets.yml`](examples/workflows/reusable-workflow-with-secrets.yml).
 
 ## Running it outside GitHub Actions
 

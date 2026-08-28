@@ -1,0 +1,241 @@
+name: Fargate Deploy
+
+# A reusable-workflow wrapper around the Fargate Deployer action.
+#
+# The action is the primary interface and the one published to the Marketplace.
+# This exists for callers who prefer `workflow_call` — in particular anyone
+# migrating from a reusable workflow, where AWS credentials arrive through a
+# `secrets:` block rather than `with:`. An action cannot accept `secrets:`, so
+# this file bridges the two.
+#
+#   jobs:
+#     deploy:
+#       uses: futuremoney/fargate-deployer/.github/workflows/fargate-deploy.yml@v1
+#       with:
+#         manifest: deploy/dev.yaml
+#       secrets:
+#         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_DEVELOPMENT }}
+#         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEVELOPMENT }}
+#
+# Note: this file is *not* listed on the Marketplace — GitHub only lists
+# actions. Callers reference it by path, as above.
+
+on:
+  workflow_call:
+    inputs:
+      manifest:
+        description: 'Path to the manifest file, e.g. deploy/production.yaml'
+        required: true
+        type: string
+      image:
+        description: 'Deploy this exact image instead of building one.'
+        required: false
+        type: string
+        default: ''
+      command:
+        description: 'deploy | diff | synth | validate | destroy'
+        required: false
+        type: string
+        default: 'deploy'
+      environment:
+        description: >-
+          GitHub environment to run in. Applies that environment's protection
+          rules and secrets — the usual way to gate a production deploy.
+        required: false
+        type: string
+        default: ''
+      runner:
+        description: 'Runner label for the job.'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+
+      # -- AWS ---------------------------------------------------------------
+      role-to-assume:
+        description: >-
+          IAM role to assume via OIDC. Prefer this over access-key secrets.
+          Requires no secrets at all when used on its own.
+        required: false
+        type: string
+        default: ''
+      role-session-name:
+        required: false
+        type: string
+        default: 'fargate-deployer'
+      role-external-id:
+        required: false
+        type: string
+        default: ''
+      role-duration-seconds:
+        required: false
+        type: string
+        default: ''
+      aws-region:
+        description: 'Override the region. Defaults to the manifest `region`.'
+        required: false
+        type: string
+        default: ''
+
+      # -- build -------------------------------------------------------------
+      ecr-repository:
+        required: false
+        type: string
+        default: ''
+      create-ecr-repository:
+        required: false
+        type: boolean
+        default: true
+      image-tag:
+        required: false
+        type: string
+        default: ''
+      push-latest:
+        required: false
+        type: boolean
+        default: false
+      dockerfile:
+        required: false
+        type: string
+        default: 'Dockerfile'
+      context:
+        required: false
+        type: string
+        default: '.'
+      build-args:
+        description: 'Build arguments, one KEY=VALUE per line.'
+        required: false
+        type: string
+        default: ''
+      platforms:
+        required: false
+        type: string
+        default: ''
+      provenance:
+        description: 'Attach SLSA provenance. Off — the resulting index is not usable by ECS.'
+        required: false
+        type: boolean
+        default: false
+
+      # -- deployment --------------------------------------------------------
+      bootstrap:
+        required: false
+        type: boolean
+        default: false
+      wait-for-stability:
+        required: false
+        type: boolean
+        default: true
+      cdk-args:
+        required: false
+        type: string
+        default: ''
+      working-directory:
+        required: false
+        type: string
+        default: '.'
+      node-version:
+        required: false
+        type: string
+        default: '20'
+
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        description: 'Static access key. Omit when using `role-to-assume`.'
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: 'Secret key that goes with AWS_ACCESS_KEY_ID.'
+        required: false
+      AWS_SESSION_TOKEN:
+        description: 'Required only when the credentials above are temporary.'
+        required: false
+      BUILD_SECRETS:
+        description: >-
+          Docker build secrets, one KEY=VALUE per line, read in the build via
+          `RUN --mount=type=secret,id=KEY`.
+        required: false
+
+    outputs:
+      image:
+        description: 'Full image URI that was deployed'
+        value: ${{ jobs.deploy.outputs.image }}
+      image-digest:
+        description: 'Digest of the pushed image'
+        value: ${{ jobs.deploy.outputs.image-digest }}
+      stack-name:
+        description: 'CloudFormation stack name'
+        value: ${{ jobs.deploy.outputs.stack-name }}
+      service-name:
+        description: 'ECS service name (Service manifests only)'
+        value: ${{ jobs.deploy.outputs.service-name }}
+      cluster:
+        description: 'ECS cluster deployed into'
+        value: ${{ jobs.deploy.outputs.cluster }}
+      kind:
+        description: 'Service or ScheduledTasks'
+        value: ${{ jobs.deploy.outputs.kind }}
+      region:
+        description: 'AWS region used'
+        value: ${{ jobs.deploy.outputs.region }}
+      account:
+        description: 'AWS account ID from the manifest'
+        value: ${{ jobs.deploy.outputs.account }}
+      log-group:
+        description: 'CloudWatch log group the tasks write to'
+        value: ${{ jobs.deploy.outputs.log-group }}
+
+permissions:
+  contents: read
+  id-token: write # harmless when using access keys; required for OIDC
+
+jobs:
+  deploy:
+    name: ${{ inputs.command }} ${{ inputs.manifest }}
+    runs-on: ${{ inputs.runner }}
+    environment: ${{ inputs.environment }}
+    outputs:
+      image: ${{ steps.deploy.outputs.image }}
+      image-digest: ${{ steps.deploy.outputs.image-digest }}
+      stack-name: ${{ steps.deploy.outputs.stack-name }}
+      service-name: ${{ steps.deploy.outputs.service-name }}
+      cluster: ${{ steps.deploy.outputs.cluster }}
+      kind: ${{ steps.deploy.outputs.kind }}
+      region: ${{ steps.deploy.outputs.region }}
+      account: ${{ steps.deploy.outputs.account }}
+      log-group: ${{ steps.deploy.outputs.log-group }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: deploy
+        # Pinned to the major tag, which the release workflow moves on every
+        # v1.x.y. Bump it only on a major release.
+        uses: futuremoney/fargate-deployer@v1
+        with:
+          manifest: ${{ inputs.manifest }}
+          image: ${{ inputs.image }}
+          command: ${{ inputs.command }}
+
+          role-to-assume: ${{ inputs.role-to-assume }}
+          role-session-name: ${{ inputs.role-session-name }}
+          role-external-id: ${{ inputs.role-external-id }}
+          role-duration-seconds: ${{ inputs.role-duration-seconds }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ inputs.aws-region }}
+
+          ecr-repository: ${{ inputs.ecr-repository }}
+          create-ecr-repository: ${{ inputs.create-ecr-repository }}
+          image-tag: ${{ inputs.image-tag }}
+          push-latest: ${{ inputs.push-latest }}
+          dockerfile: ${{ inputs.dockerfile }}
+          context: ${{ inputs.context }}
+          build-args: ${{ inputs.build-args }}
+          build-secrets: ${{ secrets.BUILD_SECRETS }}
+          platforms: ${{ inputs.platforms }}
+          provenance: ${{ inputs.provenance }}
+
+          bootstrap: ${{ inputs.bootstrap }}
+          wait-for-stability: ${{ inputs.wait-for-stability }}
+          cdk-args: ${{ inputs.cdk-args }}
+          working-directory: ${{ inputs.working-directory }}
+          node-version: ${{ inputs.node-version }}

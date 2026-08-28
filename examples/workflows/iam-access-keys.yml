@@ -1,0 +1,64 @@
+# Deploying to staging with static IAM access keys.
+#
+# Copy into your application repository as .github/workflows/deploy-staging.yml.
+#
+# OIDC (`role-to-assume`) is the better option and needs no stored credentials —
+# see examples/workflows/deploy.yml. Use this form when OIDC is not available:
+# an account that has not set up the GitHub identity provider, a runner outside
+# GitHub's network, or a migration where the keys already exist.
+#
+# The keys go in `with:`, not `secrets:` — an action has no `secrets:` block.
+# They are still masked in logs. If you would rather keep the `secrets:` shape,
+# see reusable-workflow-with-secrets.yml.
+name: Deploy staging
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+concurrency:
+  # One staging deploy at a time. A queued run supersedes an older one.
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # No `id-token: write` here — that is only needed for OIDC.
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    # Scope the credentials to this environment rather than the repository, so a
+    # workflow on another branch cannot read them.
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: deploy
+        uses: futuremoney/fargate-deployer@v1
+        with:
+          manifest: deploy/staging.yaml
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING }}
+
+          # Everything below is optional — shown to illustrate the common knobs.
+
+          # Build arguments are baked into image history. Never secrets.
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          # Build secrets are mounted and not persisted in the image. Read them
+          # in the Dockerfile with:
+          #   RUN --mount=type=secret,id=NPM_TOKEN npm ci
+          build-secrets: |
+            NPM_TOKEN=${{ secrets.NPM_TOKEN }}
+
+          # Also tag the image `latest` alongside the commit SHA.
+          push-latest: true
+
+      - name: Report
+        run: |
+          echo "Deployed ${{ steps.deploy.outputs.image }}"
+          echo "Stack     ${{ steps.deploy.outputs.stack-name }}"
+          echo "Service   ${{ steps.deploy.outputs.service-name }}"
+          echo "Logs      ${{ steps.deploy.outputs.log-group }}"
