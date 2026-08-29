@@ -9,6 +9,16 @@ as breaking — it produces a CloudFormation diff on every consumer's next deplo
 
 ## [Unreleased]
 
+### Added
+
+- **DNS guidance in the deploy output** — the job summary now lists the CNAME
+  record to create for each routed host header, and `alb-dns-name` /
+  `alb-hosted-zone-id` are exposed as outputs so a workflow can upsert the
+  records itself. The load balancer ARN is derived from the listener ARN, so this
+  needs no new manifest fields and costs one read-only API call.
+  `elasticloadbalancing:DescribeLoadBalancers` is optional: without it the deploy
+  still succeeds and the outputs are empty.
+
 ## [1.0.0] - 2026-08-14
 
 First public release. A generalised version of an internal ECS deployer, with

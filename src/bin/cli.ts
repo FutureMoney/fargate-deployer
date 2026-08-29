@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'child_process';
 import * as path from 'path';
+import { loadBalancerArnFromListener } from '../lib/alb';
 import { ManifestError } from '../lib/errors';
 import { InterpolationError } from '../lib/interpolate';
 import { loadManifest, resolveManifestPath } from '../lib/manifest';
@@ -201,6 +202,22 @@ function printInspect(config: ResolvedConfig, asJson: boolean): void {
     // Lets a build step target the architecture the task will actually run on.
     architecture: config.task.cpuArchitecture === 'ARM64' ? 'linux/arm64' : 'linux/amd64',
   };
+
+  // Enough for the caller to resolve the load balancer's DNS name and tell the
+  // user which records to point at it. Derived from the listener ARN when the
+  // manifest attaches to one, so it costs no API call here.
+  if (config.kind === 'Service' && config.loadBalancer) {
+    const lb = config.loadBalancer;
+    const loadBalancerArn =
+      lb.loadBalancerArn ??
+      (lb.listenerArn ? loadBalancerArnFromListener(lb.listenerArn) : undefined);
+    if (loadBalancerArn) {
+      facts['load-balancer-arn'] = loadBalancerArn;
+    }
+    if (lb.hostHeaders.length > 0) {
+      facts['host-headers'] = lb.hostHeaders.join(',');
+    }
+  }
 
   if (asJson) {
     console.log(JSON.stringify(facts, null, 2));

@@ -249,6 +249,58 @@ Four combinations are supported, and one non-combination:
 | `region` / `account` | Target region and account from the manifest |
 | `kind` | `Service` or `ScheduledTasks` |
 | `log-group` | CloudWatch log group the tasks write to |
+| `alb-dns-name` | Load balancer DNS name — the CNAME target for your DNS records |
+| `alb-hosted-zone-id` | Load balancer hosted zone ID, for a Route 53 alias record |
+
+### Pointing DNS at the service
+
+After a deploy the job summary lists the record to create for each host header
+you routed:
+
+> #### DNS
+>
+> Point each hostname at the load balancer:
+>
+> | Record | Type | Value |
+> |---|---|---|
+> | `hello.example.com` | CNAME | `my-alb-1234567890.us-east-1.elb.amazonaws.com` |
+>
+> An apex domain cannot hold a CNAME — use a Route 53 alias A record
+> to hosted zone `Z35SXDOTRQ7X7K` instead.
+
+The same values are available as outputs, so the records can be created by the
+workflow rather than by hand:
+
+```yaml
+- id: deploy
+  uses: futuremoney/fargate-deployer@v1
+  with:
+    manifest: deploy/production.yaml
+    role-to-assume: arn:aws:iam::111122223333:role/github-actions-deploy
+
+- name: Upsert the DNS record
+  run: |
+    aws route53 change-resource-record-sets \
+      --hosted-zone-id "$MY_ZONE" \
+      --change-batch '{
+        "Changes": [{
+          "Action": "UPSERT",
+          "ResourceRecordSet": {
+            "Name": "hello.example.com",
+            "Type": "A",
+            "AliasTarget": {
+              "HostedZoneId": "${{ steps.deploy.outputs.alb-hosted-zone-id }}",
+              "DNSName": "${{ steps.deploy.outputs.alb-dns-name }}",
+              "EvaluateTargetHealth": true
+            }
+          }
+        }]
+      }'
+```
+
+Resolving the name costs one `elasticloadbalancing:DescribeLoadBalancers` call
+after the deploy. If the deploy role lacks that permission the step warns and
+the outputs are empty — the deploy itself still succeeds.
 
 ## Scheduled tasks
 

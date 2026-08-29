@@ -143,6 +143,12 @@ role is only allowed to assume:
       "Effect": "Allow",
       "Action": ["ecs:DescribeServices"],
       "Resource": "*"
+    },
+    {
+      "Sid": "ReportLoadBalancerDnsName",
+      "Effect": "Allow",
+      "Action": ["elasticloadbalancing:DescribeLoadBalancers"],
+      "Resource": "*"
     }
   ]
 }
@@ -155,6 +161,10 @@ Notes:
 - Drop `CreateRepositoryOnFirstDeploy` once the repository exists, and set
   `create-ecr-repository: false` on the action.
 - Drop `WaitForServiceStability` if you set `wait-for-stability: false`.
+- `ReportLoadBalancerDnsName` is optional. It is what lets the job summary print
+  the CNAME target for your DNS records; without it the deploy still succeeds and
+  the `alb-dns-name` output is simply empty. The API takes no resource-level
+  conditions, hence `"*"`.
 - For a pull-request diff job, a role with only `sts:AssumeRole` on the
   bootstrap **lookup** role is enough — no push, no deploy.
 
@@ -219,6 +229,9 @@ Resources:
                   - ecr:GetAuthorizationToken
                   - ecr:CreateRepository
                   - ecs:DescribeServices
+                  # Optional: lets the action report the load balancer DNS name
+                  # so the job summary can show the records to create.
+                  - elasticloadbalancing:DescribeLoadBalancers
                 Resource: '*'
               - Effect: Allow
                 Action:

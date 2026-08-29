@@ -182,6 +182,12 @@ on:
       log-group:
         description: 'CloudWatch log group the tasks write to'
         value: ${{ jobs.deploy.outputs.log-group }}
+      alb-dns-name:
+        description: 'Load balancer DNS name — the CNAME target for your records'
+        value: ${{ jobs.deploy.outputs.alb-dns-name }}
+      alb-hosted-zone-id:
+        description: 'Load balancer hosted zone ID, for a Route 53 alias record'
+        value: ${{ jobs.deploy.outputs.alb-hosted-zone-id }}
 
 permissions:
   contents: read
@@ -202,6 +208,8 @@ jobs:
       region: ${{ steps.deploy.outputs.region }}
       account: ${{ steps.deploy.outputs.account }}
       log-group: ${{ steps.deploy.outputs.log-group }}
+      alb-dns-name: ${{ steps.deploy.outputs.alb-dns-name }}
+      alb-hosted-zone-id: ${{ steps.deploy.outputs.alb-hosted-zone-id }}
     steps:
       - uses: actions/checkout@v4
 

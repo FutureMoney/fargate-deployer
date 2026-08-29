@@ -172,6 +172,17 @@ outputs:
   log-group:
     description: 'CloudWatch log group the tasks write to'
     value: ${{ steps.inspect.outputs.log-group }}
+  alb-dns-name:
+    description: >-
+      DNS name of the load balancer this service sits behind — the target for a
+      CNAME record. Empty when the service has no load balancer, or when the
+      deploy role cannot call elasticloadbalancing:DescribeLoadBalancers.
+    value: ${{ steps.dns.outputs.alb-dns-name }}
+  alb-hosted-zone-id:
+    description: >-
+      Canonical hosted zone ID of the load balancer, for a Route 53 alias record
+      (which is what an apex domain needs).
+    value: ${{ steps.dns.outputs.alb-hosted-zone-id }}
 
 runs:
   using: composite
@@ -369,6 +380,36 @@ runs:
           exit 1
         fi
 
+    # Turn the load balancer ARN — derived from the listener ARN at no API cost —
+    # into the DNS name a user points their records at. Deliberately non-fatal:
+    # the deploy has already succeeded by this point, and DescribeLoadBalancers
+    # is a permission some deploy roles will not have.
+    - name: Resolve load balancer DNS
+      id: dns
+      if: inputs.command == 'deploy' && steps.inspect.outputs.load-balancer-arn != ''
+      shell: bash
+      env:
+        REGION: ${{ inputs.aws-region || steps.inspect.outputs.region }}
+        LB_ARN: ${{ steps.inspect.outputs.load-balancer-arn }}
+      run: |
+        set -uo pipefail
+
+        if ! described=$(aws elbv2 describe-load-balancers \
+              --region "$REGION" --load-balancer-arns "$LB_ARN" \
+              --query 'LoadBalancers[0].[DNSName,CanonicalHostedZoneId]' \
+              --output text 2>&1); then
+          echo "::warning::Could not read the load balancer DNS name, so the DNS" \
+               "records are not shown below. Grant elasticloadbalancing:DescribeLoadBalancers" \
+               "to the deploy role to enable it. ($described)"
+          exit 0
+        fi
+
+        read -r dns_name zone_id <<< "$described"
+        {
+          echo "alb-dns-name=$dns_name"
+          echo "alb-hosted-zone-id=$zone_id"
+        } >> "$GITHUB_OUTPUT"
+
     - name: Job summary
       if: always() && inputs.command == 'deploy'
       shell: bash
@@ -381,6 +422,9 @@ runs:
         REGION: ${{ inputs.aws-region || steps.inspect.outputs.region }}
         IMAGE: ${{ steps.image.outputs.uri }}
         LOG_GROUP: ${{ steps.inspect.outputs.log-group }}
+        ALB_DNS: ${{ steps.dns.outputs.alb-dns-name }}
+        ALB_ZONE: ${{ steps.dns.outputs.alb-hosted-zone-id }}
+        HOST_HEADERS: ${{ steps.inspect.outputs.host-headers }}
       run: |
         {
           echo "### 🚀 $NAME"
@@ -393,4 +437,30 @@ runs:
           echo "| Account / region | \`$ACCOUNT\` / \`$REGION\` |"
           echo "| Image | \`$IMAGE\` |"
           echo "| Logs | [\`$LOG_GROUP\`](https://$REGION.console.aws.amazon.com/cloudwatch/home?region=$REGION#logsV2:log-groups/log-group/$(echo "$LOG_GROUP" | sed 's|/|%252F|g')) |"
+
+          # The records a user has to create to reach this service. Shown only
+          # once the load balancer DNS name is known.
+          if [ -n "$ALB_DNS" ]; then
+            echo ""
+            echo "#### DNS"
+            echo ""
+            if [ -n "$HOST_HEADERS" ]; then
+              echo "Point each hostname at the load balancer:"
+              echo ""
+              echo "| Record | Type | Value |"
+              echo "|---|---|---|"
+              IFS=',' read -ra hosts <<< "$HOST_HEADERS"
+              for host in "${hosts[@]}"; do
+                echo "| \`$host\` | CNAME | \`$ALB_DNS\` |"
+              done
+              echo ""
+              echo "An apex domain cannot hold a CNAME — use a Route 53 alias A record"
+              echo "to hosted zone \`$ALB_ZONE\` instead."
+            else
+              echo "Load balancer \`$ALB_DNS\` (hosted zone \`$ALB_ZONE\`)."
+              echo ""
+              echo "This service is the listener's default action, so it answers on"
+              echo "any hostname pointed at the load balancer."
+            fi
+          fi
         } >> "$GITHUB_STEP_SUMMARY"
