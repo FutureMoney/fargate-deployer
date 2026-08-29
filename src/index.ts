@@ -13,6 +13,7 @@
 export { createStack, AppOptions } from './lib/app';
 export { loadManifest, resolveManifestPath, LoadOptions } from './lib/manifest';
 export { validateManifest } from './lib/validate';
+export { inspectFacts, formatFacts } from './lib/inspect';
 export { resolveManifest } from './lib/resolve';
 export { FargateServiceStack, FargateServiceStackProps } from './lib/service-stack';
 export { ScheduledTasksStack, ScheduledTasksStackProps } from './lib/scheduled-tasks-stack';

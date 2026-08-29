@@ -1,0 +1,8 @@
+# Review is required from a code owner on everything by default.
+*                       @coreyshaw
+
+# Extra care: these define the published contract. Changing them can break every
+# consumer pinned to @v1.
+/action.yml             @coreyshaw
+/.github/workflows/     @coreyshaw
+/schema/                @coreyshaw

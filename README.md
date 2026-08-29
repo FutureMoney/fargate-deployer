@@ -1,6 +1,5 @@
 # Fargate Deployer
 
-[![CI](https://github.com/futuremoney/fargate-deployer/actions/workflows/ci.yml/badge.svg)](https://github.com/futuremoney/fargate-deployer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Deploy a container to **AWS ECS Fargate** from a single declarative manifest — a
@@ -379,6 +378,9 @@ npx fargate-deployer destroy  --manifest deploy/production.yaml --image my-image
 
 It uses your ambient AWS credentials, the same as any other AWS CLI tool.
 
+Running `diff` locally before pushing is the fastest way to see what a deploy
+would change — it is the same synthesis CI performs, so the output matches.
+
 ## Using the constructs in your own CDK app
 
 If your repository already has a CDK app, add the stack to it rather than
@@ -412,6 +414,8 @@ want to construct them yourself.
 | [Architecture](docs/architecture.md) | What is created, how it is named, why |
 | [Troubleshooting](docs/troubleshooting.md) | Common failures and what they mean |
 | [Contributing](CONTRIBUTING.md) | Development setup and release process |
+| [Security policy](SECURITY.md) | Reporting a vulnerability, and the action's trust boundaries |
+| [Changelog](CHANGELOG.md) | What changed in each release |
 
 ## License
 

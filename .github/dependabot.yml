@@ -1,0 +1,24 @@
+version: 2
+
+updates:
+  # The deployer's own dependencies. aws-cdk-lib moves fast; grouping keeps the
+  # noise down while still surfacing security fixes promptly.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      aws-cdk:
+        patterns: ['aws-cdk', 'aws-cdk-lib', 'constructs']
+      dev-dependencies:
+        dependency-type: development
+
+  # Actions used by this repository's own workflows AND by action.yml. The second
+  # matters more: consumers of this action inherit whatever it runs, so a stale
+  # third-party action here is a stale action in everybody's pipeline.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'child_process';
 import * as path from 'path';
-import { loadBalancerArnFromListener } from '../lib/alb';
 import { ManifestError } from '../lib/errors';
+import { formatFacts, inspectFacts } from '../lib/inspect';
 import { InterpolationError } from '../lib/interpolate';
 import { loadManifest, resolveManifestPath } from '../lib/manifest';
 import { ResolvedConfig } from '../lib/types';
@@ -185,47 +185,9 @@ function runCdk(args: string[], options: Options, image: string): number {
   return result.status ?? 1;
 }
 
-/**
- * Emit the facts a CI job needs before it can talk to AWS — region and account
- * above all. Shaped as `key=value` lines so a workflow can append the output
- * straight to `$GITHUB_OUTPUT`.
- */
 function printInspect(config: ResolvedConfig, asJson: boolean): void {
-  const facts: Record<string, string> = {
-    kind: config.kind,
-    name: config.name,
-    'stack-name': config.stackName,
-    account: config.account,
-    region: config.region,
-    cluster: config.clusterName,
-    'log-group': config.task.logGroupName,
-    // Lets a build step target the architecture the task will actually run on.
-    architecture: config.task.cpuArchitecture === 'ARM64' ? 'linux/arm64' : 'linux/amd64',
-  };
-
-  // Enough for the caller to resolve the load balancer's DNS name and tell the
-  // user which records to point at it. Derived from the listener ARN when the
-  // manifest attaches to one, so it costs no API call here.
-  if (config.kind === 'Service' && config.loadBalancer) {
-    const lb = config.loadBalancer;
-    const loadBalancerArn =
-      lb.loadBalancerArn ??
-      (lb.listenerArn ? loadBalancerArnFromListener(lb.listenerArn) : undefined);
-    if (loadBalancerArn) {
-      facts['load-balancer-arn'] = loadBalancerArn;
-    }
-    if (lb.hostHeaders.length > 0) {
-      facts['host-headers'] = lb.hostHeaders.join(',');
-    }
-  }
-
-  if (asJson) {
-    console.log(JSON.stringify(facts, null, 2));
-    return;
-  }
-  for (const [key, value] of Object.entries(facts)) {
-    console.log(`${key}=${value}`);
-  }
+  const facts = inspectFacts(config);
+  console.log(asJson ? JSON.stringify(facts, null, 2) : formatFacts(facts));
 }
 
 function printSummary(config: ResolvedConfig, image?: string): void {

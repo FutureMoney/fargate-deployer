@@ -1,6 +1,6 @@
 {
   "name": "fargate-deployer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Deploy containers to AWS ECS Fargate from a declarative manifest — long-running services behind an ALB, or EventBridge-scheduled tasks.",
   "keywords": [
     "aws",
@@ -13,7 +13,15 @@
     "eventbridge"
   ],
   "license": "MIT",
-  "author": "Corey Shaw",
+  "author": "FutureMoney",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/futuremoney/fargate-deployer.git"
+  },
+  "homepage": "https://github.com/futuremoney/fargate-deployer#readme",
+  "bugs": {
+    "url": "https://github.com/futuremoney/fargate-deployer/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -25,6 +33,9 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },

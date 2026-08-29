@@ -3,7 +3,7 @@ description: >-
   Build, push and deploy a container to AWS ECS Fargate from a declarative
   manifest — a long-running service behind an Application Load Balancer, or a
   set of EventBridge-scheduled tasks.
-author: 'Corey Shaw'
+author: 'FutureMoney'
 
 branding:
   icon: 'upload-cloud'

@@ -8,7 +8,7 @@ Notes for the maintainer. Everything here is a one-time setup, except
 - [Marketplace listing](#marketplace-listing)
 - [Cutting a release](#cutting-a-release)
 - [Version tags](#version-tags)
-- [Publishing to npm as well](#publishing-to-npm-as-well)
+- [Publishing to npm](#publishing-to-npm)
 
 ---
 
@@ -35,7 +35,7 @@ Use `sed -i` without the `''` on Linux.
 | Requirement | Where |
 | --- | --- |
 | `action.yml` at the repository root | ✅ present |
-| `name` unique across the whole Marketplace | Check before publishing — "Fargate Deployer" may be taken |
+| `name` unique across the whole Marketplace | ✅ searched — "Fargate Deployer" was free as of the first release |
 | `description` and `author` | ✅ present |
 | `branding.icon` and `branding.color` from GitHub's allowed set | ✅ `upload-cloud` / `orange` |
 | A `README.md` | ✅ present |
@@ -64,6 +64,20 @@ that has to change; the repository name and `uses:` path are independent of it.
 Later releases can be published to the Marketplace from the release page
 directly. The listing shows the latest published release, but users can pin any
 tag.
+
+### Badges
+
+The CI badge in the README returns 404 while the repository is private — GitHub
+serves it only to principals who can read the repository — and also before the
+workflow's first run. Both resolve themselves; nothing to fix.
+
+Two more are worth adding once the corresponding thing is live. Holding them
+until then avoids shipping a README with broken images:
+
+```markdown
+[![npm](https://img.shields.io/npm/v/fargate-deployer)](https://www.npmjs.com/package/fargate-deployer)
+[![Marketplace](https://img.shields.io/badge/marketplace-Fargate%20Deployer-2088FF?logo=github)](https://github.com/marketplace/actions/fargate-deployer)
+```
 
 ### Making the listing land well
 
@@ -118,15 +132,86 @@ Note that changing a *default* is more disruptive here than in most libraries: a
 different default health check interval means a real CloudFormation diff on
 every consumer's next deploy.
 
-## Publishing to npm as well
+## Publishing to npm
 
-The package is set up to publish (`main`, `types`, `bin`, `files`) so people can
-use the CLI directly with `npx fargate-deployer` or import the constructs into
-their own CDK app. This is optional — the action works without it.
+**The action does not need npm** — it runs from the `dist/` committed on the
+release tag. But the CLI does, and the docs use it in a dozen places:
 
 ```bash
+npx fargate-deployer validate --manifest deploy/production.yaml
+npx fargate-deployer diff --manifest deploy/production.yaml --image my-image:tag
+```
+
+`npx` resolves from the npm registry, not from GitHub. Making the repository
+public does nothing for those commands — without an npm publish they fail with
+`404 Not Found`.
+
+### The first publish has to be manual
+
+npm's trusted publishing is configured *on a package*, so the package has to
+exist before you can configure it. New packages therefore have a chicken-and-egg
+problem, and the only way through it is one manual publish from a terminal:
+
+```bash
+npm login          # your normal account, 2FA and all
+npm run build
 npm publish --access public
 ```
 
-If you skip npm, remove the `npx fargate-deployer` examples from the README and
-the docs, or reword them to use `node dist/bin/cli.js` from a checkout.
+This is also the answer to *"There are security risks with this option. For
+automation or CI/CD uses, please use Trusted Publishing instead."* — that warning
+appears when creating a long-lived automation token. You do not need one. A
+manual publish uses your interactive login, and every publish after this one uses
+OIDC.
+
+> `publishConfig` deliberately does **not** set `provenance: true`. Provenance can
+> only be generated inside supported CI, so enabling it there would make this
+> manual publish fail. Trusted publishing attaches provenance by itself.
+
+### Then configure trusted publishing
+
+On npmjs.com, open the package → Settings → **Trusted Publisher** → GitHub
+Actions, and fill in:
+
+| Field | Value |
+| --- | --- |
+| Organization or user | `futuremoney` |
+| Repository | `fargate-deployer` |
+| Workflow filename | `release.yml` |
+| Environment | *(leave empty)* |
+| Allowed actions | `npm publish` |
+
+The workflow filename must match exactly — OIDC claims include the workflow path,
+and a mismatch is rejected with an authentication error rather than a helpful one.
+
+### Then switch CI on
+
+Set the repository **variable** (Settings → Secrets and variables → Actions →
+Variables) `NPM_PUBLISH` to `true`. A variable, not a secret — there is no
+credential involved any more.
+
+From then on [`release.yml`](../.github/workflows/release.yml) publishes on every
+tag. It:
+
+- upgrades npm first, because `setup-node` still ships npm 10.x and trusted
+  publishing needs 11.5.1 or later (the job also runs Node 22, which is the
+  documented minimum);
+- checks whether the version is already on the registry and exits cleanly if so,
+  so re-running a release does not fail;
+- passes no `--provenance` flag, because trusted publishing attaches the
+  attestation on its own;
+- needs `id-token: write`, which is already declared.
+
+No token is stored anywhere, and nothing expires.
+
+### If you decide not to publish
+
+Rewrite the `npx fargate-deployer …` examples. The closest working substitute
+runs straight from a release tag, which carries a prebuilt `dist/`:
+
+```bash
+npx github:futuremoney/fargate-deployer#v1 validate --manifest deploy/production.yaml
+```
+
+That works but installs the whole dependency tree — including `aws-cdk-lib` — on
+each invocation, so it is noticeably slower than a registry install.

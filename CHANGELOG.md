@@ -9,6 +9,8 @@ as breaking — it produces a CloudFormation diff on every consumer's next deplo
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-29
+
 ### Added
 
 - **DNS guidance in the deploy output** — the job summary now lists the CNAME
@@ -18,6 +20,19 @@ as breaking — it produces a CloudFormation diff on every consumer's next deplo
   needs no new manifest fields and costs one read-only API call.
   `elasticloadbalancing:DescribeLoadBalancers` is optional: without it the deploy
   still succeeds and the outputs are empty.
+- **Community health files** — `SECURITY.md` documenting the action's trust
+  boundaries, a code of conduct, issue and pull request templates, `CODEOWNERS`,
+  and Dependabot for both npm and the actions used by `action.yml`.
+- **npm publishing from CI** via trusted publishing (OIDC), gated on the
+  `NPM_PUBLISH` repository variable. No token is stored.
+
+### Fixed
+
+- `inspect` tests no longer shell out to `dist/`, which does not exist when the
+  test job runs on a clean checkout. The logic moved to `src/lib/inspect.ts` as a
+  pure function and is tested from source.
+- `examples/service-full.yaml` used `${GITHUB_SHA}` with no default, so
+  `validate` failed for anyone running it outside GitHub Actions.
 
 ## [1.0.0] - 2026-08-14
 
@@ -87,5 +102,6 @@ every account-specific value moved out of the code and into the manifest.
 - Images are matched against a full ECR URI pattern, so registries with a port,
   digest-pinned images, and non-ECR registries all work.
 
-[Unreleased]: https://github.com/futuremoney/fargate-deployer/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/futuremoney/fargate-deployer/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/futuremoney/fargate-deployer/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/futuremoney/fargate-deployer/releases/tag/v1.0.0

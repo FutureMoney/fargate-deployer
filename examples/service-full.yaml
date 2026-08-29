@@ -37,8 +37,10 @@ task:
   environment:
     NODE_ENV: production
     LOG_LEVEL: info
-    # Expanded from the process environment at deploy time.
-    RELEASE_SHA: ${GITHUB_SHA}
+    # Expanded from the process environment at deploy time. The `:-` default
+    # keeps `validate` working outside CI, where GITHUB_SHA is not set — without
+    # one, an unset variable is an error rather than an empty string.
+    RELEASE_SHA: ${GITHUB_SHA:-local}
   secrets:
     # Whole secret value:
     STRIPE_KEY: "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/stripe-AbCdEf"

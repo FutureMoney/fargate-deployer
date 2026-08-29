@@ -1,33 +1,23 @@
-import { execFileSync } from 'child_process';
-import * as path from 'path';
+import { formatFacts, inspectFacts } from '../src/lib/inspect';
+import { loadManifest } from '../src/lib/manifest';
 import { cleanup, scheduledManifest, serviceManifest, writeManifest } from './helpers';
 
 /**
  * `inspect` is the contract between the CLI and the GitHub Action — the action
  * appends its output straight to $GITHUB_OUTPUT. A renamed or dropped key breaks
  * the action silently, so the keys are asserted here rather than just the values.
+ *
+ * Deliberately imports the source rather than running `dist/bin/cli.js`: the test
+ * job runs before the build, so a test that shells out to the built CLI fails on
+ * a clean checkout.
  */
-const CLI = path.join(__dirname, '..', 'dist', 'bin', 'cli.js');
-
 function inspect(manifest: unknown): Record<string, string> {
-  const file = writeManifest(manifest);
-  const stdout = execFileSync(process.execPath, [CLI, 'inspect', '--manifest', file], {
-    encoding: 'utf-8',
-  });
-  return Object.fromEntries(
-    stdout
-      .trim()
-      .split('\n')
-      .map((line) => {
-        const at = line.indexOf('=');
-        return [line.slice(0, at), line.slice(at + 1)];
-      }),
-  );
+  return inspectFacts(loadManifest(writeManifest(manifest)));
 }
 
 afterEach(cleanup);
 
-describe('inspect', () => {
+describe('inspectFacts', () => {
   it('emits the keys the action consumes', () => {
     expect(Object.keys(inspect(serviceManifest()))).toEqual(
       expect.arrayContaining([
@@ -43,6 +33,13 @@ describe('inspect', () => {
     );
   });
 
+  it('reports the build platform for the manifest architecture', () => {
+    expect(inspect(serviceManifest())['architecture']).toBe('linux/amd64');
+    const arm = serviceManifest();
+    arm.task.runtimePlatform = { cpuArchitecture: 'ARM64' };
+    expect(inspect(arm)['architecture']).toBe('linux/arm64');
+  });
+
   it('derives the load balancer ARN from the listener ARN', () => {
     expect(inspect(serviceManifest())['load-balancer-arn']).toBe(
       'arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/alb/1234567890abcdef',
@@ -50,15 +47,14 @@ describe('inspect', () => {
   });
 
   it('prefers an explicit loadBalancerArn over deriving one', () => {
-    const manifest = serviceManifest({
-      loadBalancer: {
-        loadBalancerArn:
-          'arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/other/9999888877776666',
-        certificateArn: 'arn:aws:acm:us-east-1:111122223333:certificate/abc',
-        securityGroupId: 'sg-0abc123def4567890',
-        hostHeaders: 'test.example.com',
-      },
-    } as any);
+    const manifest = serviceManifest();
+    manifest.loadBalancer = {
+      loadBalancerArn:
+        'arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/other/9999888877776666',
+      certificateArn: 'arn:aws:acm:us-east-1:111122223333:certificate/abc',
+      securityGroupId: 'sg-0abc123def4567890',
+      hostHeaders: 'test.example.com',
+    };
     expect(inspect(manifest)['load-balancer-arn']).toContain('other/9999888877776666');
   });
 
@@ -89,5 +85,17 @@ describe('inspect', () => {
     const facts = inspect(scheduledManifest());
     expect(facts['load-balancer-arn']).toBeUndefined();
     expect(facts['host-headers']).toBeUndefined();
+  });
+});
+
+describe('formatFacts', () => {
+  it('renders key=value lines for $GITHUB_OUTPUT', () => {
+    const lines = formatFacts({ kind: 'Service', region: 'us-east-1' }).split('\n');
+    expect(lines).toEqual(['kind=Service', 'region=us-east-1']);
+  });
+
+  it('leaves a value containing = intact, splitting only on the first', () => {
+    const [line] = formatFacts({ 'host-headers': 'a.example.com' }).split('\n');
+    expect(line).toBe('host-headers=a.example.com');
   });
 });

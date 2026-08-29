@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # npm provenance attestation
 
 jobs:
   release:
@@ -31,8 +32,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # npm trusted publishing needs Node >= 22.14 and npm >= 11.5.1.
+          node-version: '22'
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - run: npm ci
       - run: npm run typecheck
@@ -68,3 +71,37 @@ jobs:
           git push --force origin "refs/tags/$TAG" "refs/tags/$major"
 
           echo "Published $TAG and moved $major to it." >> "$GITHUB_STEP_SUMMARY"
+
+      # The action itself never needs npm — it runs from the tagged dist/. This
+      # publish is for the CLI (`npx fargate-deployer diff`) and for importing
+      # the constructs into someone's own CDK app.
+      #
+      # Authentication is npm trusted publishing (OIDC): no token, no secret.
+      # It requires a one-time setup on npmjs.com naming this repository and
+      # this workflow file — see docs/publishing.md. Set the repository variable
+      # NPM_PUBLISH to 'true' once that is done.
+      - name: Publish to npm
+        if: vars.NPM_PUBLISH == 'true'
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # setup-node still ships npm 10.x; trusted publishing needs 11.5.1+.
+          npm install --global npm@latest
+          npm --version
+
+          version="${TAG#v}"
+          if npm view "fargate-deployer@$version" version >/dev/null 2>&1; then
+            echo "fargate-deployer@$version is already on npm; nothing to do."
+            exit 0
+          fi
+
+          # No --provenance flag: trusted publishing attaches the attestation
+          # automatically, and passing it here is redundant.
+          npm publish
+
+          {
+            echo ""
+            echo "Published \`fargate-deployer@$version\` to npm."
+          } >> "$GITHUB_STEP_SUMMARY"

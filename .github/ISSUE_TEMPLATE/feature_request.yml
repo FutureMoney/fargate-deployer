@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a new manifest field, action input, or behaviour.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The deployment problem, not the field you have in mind for it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How do you handle it today?
+      description: >-
+        A separate CDK stack, a follow-up CLI step, a fork? This is the strongest
+        signal for whether something belongs in the tool.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: >-
+        A manifest snippet or action input, if you have one in mind.
+      render: yaml
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: >-
+            This is about a per-service resource (task definition, service,
+            target group, listener rule, schedule) rather than shared
+            infrastructure (VPC, cluster, load balancer), which the tool
+            deliberately does not create.

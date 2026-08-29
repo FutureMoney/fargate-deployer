@@ -1,0 +1,53 @@
+name: Bug report
+description: Something behaves differently from what the docs describe.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: run `npx fargate-deployer validate --manifest <path>`.
+        Most problems are manifest problems, and validation names the field.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The tag or SHA in your `uses:` line.
+      placeholder: v1.0.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Manifest kind
+      options: [Service, ScheduledTasks, 'Not manifest-specific']
+    validations:
+      required: true
+
+  - type: textarea
+    id: manifest
+    attributes:
+      label: Manifest
+      description: >-
+        The smallest manifest that reproduces it. Replace account IDs, ARNs and
+        hostnames with placeholders — this issue is public.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output
+      description: >-
+        The failing step's log. Redact anything account-specific. Secret values
+        are masked by GitHub, but ARNs and account IDs are not.
+      render: shell

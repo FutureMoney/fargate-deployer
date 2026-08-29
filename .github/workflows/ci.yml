@@ -1,9 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # Pull requests only. A push to main is almost always a merge of a PR that CI
+  # already ran, so running again duplicates the work and the minutes.
   pull_request:
+  # Kept so a run can still be triggered by hand from the Actions tab.
+  workflow_dispatch:
 
 permissions:
   contents: read
