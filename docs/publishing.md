@@ -184,14 +184,11 @@ Actions, and fill in:
 The workflow filename must match exactly — OIDC claims include the workflow path,
 and a mismatch is rejected with an authentication error rather than a helpful one.
 
-### Then switch CI on
+### That is the whole setup
 
-Set the repository **variable** (Settings → Secrets and variables → Actions →
-Variables) `NPM_PUBLISH` to `true`. A variable, not a secret — there is no
-credential involved any more.
-
-From then on [`release.yml`](../.github/workflows/release.yml) publishes on every
-tag. It:
+There is nothing to configure on the GitHub side — no secret, no variable.
+Once the trusted publisher is registered,
+[`release.yml`](../.github/workflows/release.yml) publishes on every tag. It:
 
 - upgrades npm first, because `setup-node` still ships npm 10.x and trusted
   publishing needs 11.5.1 or later (the job also runs Node 22, which is the
@@ -203,6 +200,11 @@ tag. It:
 - needs `id-token: write`, which is already declared.
 
 No token is stored anywhere, and nothing expires.
+
+The step is deliberately ungated. An earlier version made it opt-in through a
+repository variable, which meant a misconfiguration showed up as a *skipped*
+step and a release that quietly never reached npm. A failure to publish should
+turn the release red.
 
 ### If you decide not to publish
 

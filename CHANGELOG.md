@@ -23,8 +23,8 @@ as breaking — it produces a CloudFormation diff on every consumer's next deplo
 - **Community health files** — `SECURITY.md` documenting the action's trust
   boundaries, a code of conduct, issue and pull request templates, `CODEOWNERS`,
   and Dependabot for both npm and the actions used by `action.yml`.
-- **npm publishing from CI** via trusted publishing (OIDC), gated on the
-  `NPM_PUBLISH` repository variable. No token is stored.
+- **npm publishing from CI** via trusted publishing (OIDC). No token is stored
+  and nothing expires.
 
 ### Fixed
 

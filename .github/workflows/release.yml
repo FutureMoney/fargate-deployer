@@ -64,7 +64,14 @@ jobs:
           git config user.email 'github-actions[bot]@users.noreply.github.com'
 
           git add --force dist
-          git commit --message "Release $TAG"
+          # A re-run checks out a tag that already carries dist/, and the
+          # rebuild is identical — so there may be nothing to commit. That is
+          # success, not failure.
+          if git diff --cached --quiet; then
+            echo "dist/ unchanged; reusing the existing release commit."
+          else
+            git commit --message "Release $TAG"
+          fi
 
           git tag --force --annotate "$TAG" --message "$TAG"
           git tag --force --annotate "$major" --message "Latest $major release ($TAG)"
@@ -78,10 +85,11 @@ jobs:
       #
       # Authentication is npm trusted publishing (OIDC): no token, no secret.
       # It requires a one-time setup on npmjs.com naming this repository and
-      # this workflow file — see docs/publishing.md. Set the repository variable
-      # NPM_PUBLISH to 'true' once that is done.
+      # this workflow file — see docs/publishing.md.
+      #
+      # Deliberately ungated: a failure to publish should be a red release, not
+      # a silently skipped step.
       - name: Publish to npm
-        if: vars.NPM_PUBLISH == 'true'
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
