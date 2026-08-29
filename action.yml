@@ -196,7 +196,7 @@ runs:
     # The deployer's dependencies live with the action, so your repository needs
     # no Node.js toolchain, no lockfile and no CDK of its own.
     - name: Cache deployer dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ github.action_path }}/node_modules
         key: fargate-deployer-${{ runner.os }}-node${{ inputs.node-version }}-${{ github.action_ref || 'local' }}
