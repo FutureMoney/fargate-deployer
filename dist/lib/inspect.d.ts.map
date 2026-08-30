@@ -1,0 +1,1 @@
+{"version":3,"file":"inspect.d.ts","sourceRoot":"","sources":["../../src/lib/inspect.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,cAAc,EAAE,MAAM,SAAS,CAAC;AAEzC;;;;;;;;GAQG;AACH,wBAAgB,YAAY,CAAC,MAAM,EAAE,cAAc,GAAG,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CA8B3E;AAED,0EAA0E;AAC1E,wBAAgB,WAAW,CAAC,KAAK,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,GAAG,MAAM,CAIjE"}
