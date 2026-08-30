@@ -35,7 +35,11 @@ jobs:
           # npm trusted publishing needs Node >= 22.14 and npm >= 11.5.1.
           node-version: '22'
           cache: npm
-          registry-url: https://registry.npmjs.org
+          # Deliberately no `registry-url`. It makes setup-node write an .npmrc
+          # containing `_authToken=${NODE_AUTH_TOKEN}`, and with no token set
+          # npm sends an empty credential that takes precedence over OIDC — so
+          # trusted publishing never gets a chance and the publish 401s.
+          # npm already defaults to registry.npmjs.org.
 
       - run: npm ci
       - run: npm run typecheck
@@ -98,6 +102,12 @@ jobs:
           # setup-node still ships npm 10.x; trusted publishing needs 11.5.1+.
           npm install --global npm@latest
           npm --version
+
+          # Belt and braces: any stray auth config would override OIDC, so
+          # strip it rather than trust that nothing wrote one.
+          if [ -f .npmrc ]; then
+            sed -i '/_authToken/d; /always-auth/d' .npmrc
+          fi
 
           version="${TAG#v}"
           if npm view "fargate-deployer@$version" version >/dev/null 2>&1; then

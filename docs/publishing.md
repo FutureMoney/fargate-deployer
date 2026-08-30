@@ -211,6 +211,14 @@ Once the trusted publisher is registered,
 
 No token is stored anywhere, and nothing expires.
 
+> **Do not add `registry-url` to `actions/setup-node`.** It writes an `.npmrc`
+> containing `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`, and with no
+> token in the environment npm sends an empty credential that takes precedence
+> over OIDC. The publish then fails to authenticate even though trusted
+> publishing is configured correctly. The giveaway in the log is
+> `npm warn Unknown user config "always-auth"`, which only appears when
+> setup-node has written that file. npm defaults to the public registry anyway.
+
 The step is deliberately ungated. An earlier version made it opt-in through a
 repository variable, which meant a misconfiguration showed up as a *skipped*
 step and a release that quietly never reached npm. A failure to publish should

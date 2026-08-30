@@ -28,6 +28,10 @@ as breaking — it produces a CloudFormation diff on every consumer's next deplo
 
 ### Fixed
 
+- The release workflow passed `registry-url` to `actions/setup-node`, which
+  writes an `.npmrc` referencing `NODE_AUTH_TOKEN`. With trusted publishing
+  there is no such token, so npm sent an empty credential that took precedence
+  over OIDC and the publish failed to authenticate.
 - The release workflow's npm publish step was gated on an `NPM_PUBLISH`
   repository variable, so a release could ship to GitHub while silently never
   reaching npm. With trusted publishing there is no credential that can be
