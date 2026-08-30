@@ -9,12 +9,39 @@ as breaking — it produces a CloudFormation diff on every consumer's next deplo
 
 ## [Unreleased]
 
+### Documentation
+
+- **Construct mode is now actually documented.** It had one thin README section
+  showing the mechanics and nothing else — no reason to choose it, no
+  cross-stack example, and no mention anywhere that the CLI synthesises a
+  *single-stack* app, so other stacks in a repository silently do not deploy.
+  [`docs/construct-mode.md`](docs/construct-mode.md) covers when to use it, the
+  sibling-stack model, wiring CDK tokens into the manifest, and what is
+  exported. No behaviour changed.
+
+### Changed
+
+- **`docker/build-push-action` upgraded from v6 to v7.** This runs inside every
+  consuming pipeline, so a build that relies on v6-specific behaviour should be
+  checked against a non-production deploy first.
+
 ### Fixed
 
 - `action.yml`'s description was 184 characters, and the Marketplace rejects
   anything from 125 up — a limit it only enforces when you publish a release,
   long after the tag is cut. Shortened, and CI now checks the listing metadata
   (`npm run check:action`) so it fails on a pull request instead.
+
+### Internal
+
+- The release workflow now creates a GitHub release for each tag, with notes
+  taken from that version's changelog section. Previously it pushed tags only,
+  so there was no release for the Marketplace listing to attach to.
+- CI runs on every branch except `main`, on pull requests from forks, and
+  cancels superseded runs per branch.
+- Dependabot no longer groups major updates together: one impossible bump
+  (TypeScript 7, which no released `ts-jest` supports) was blocking three
+  installable ones.
 
 ## [1.1.0] - 2026-08-29
 
