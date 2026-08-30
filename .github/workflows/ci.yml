@@ -1,8 +1,13 @@
 name: CI
 
 on:
-  # Pull requests only. A push to main is almost always a merge of a PR that CI
-  # already ran, so running again duplicates the work and the minutes.
+  # Every branch except main. A push to main is a merge of a PR that CI has
+  # already run, so testing it again duplicates the work and the minutes.
+  push:
+    branches-ignore: [main]
+  # Needed for pull requests from forks, where the push event fires in the
+  # contributor's repository rather than here. Same-repo pull requests are
+  # filtered out per job below, since their branch push already covers them.
   pull_request:
   # Kept so a run can still be triggered by hand from the Actions tab.
   workflow_dispatch:
@@ -10,9 +15,19 @@ on:
 permissions:
   contents: read
 
+# One run per branch. A new push supersedes an in-flight run for the same ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Test (Node ${{ matrix.node }})
+    # Skip on a same-repo pull request: the branch push already tested this
+    # SHA. Fork pull requests have no push event here, so they still run.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -30,6 +45,11 @@ jobs:
 
   examples:
     name: Validate examples
+    # Skip on a same-repo pull request: the branch push already tested this
+    # SHA. Fork pull requests have no push event here, so they still run.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +71,11 @@ jobs:
 
   lint-actions:
     name: Lint workflows and action
+    # Skip on a same-repo pull request: the branch push already tested this
+    # SHA. Fork pull requests have no push event here, so they still run.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
