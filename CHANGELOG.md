@@ -28,6 +28,17 @@ as breaking — it produces a CloudFormation diff on every consumer's next deplo
 
 ### Fixed
 
+- The release workflow's npm publish step was gated on an `NPM_PUBLISH`
+  repository variable, so a release could ship to GitHub while silently never
+  reaching npm. With trusted publishing there is no credential that can be
+  absent, so the gate is gone — a failed publish now fails the release.
+- Re-running a release could not work: it checks out a tag that already carries
+  `dist/`, the rebuild is byte-identical, and `git commit` then exited 1 with
+  nothing staged. The commit is now conditional on there being a change.
+- `package.json` pointed at `futuremoney/fargate-deployer` while the repository
+  is `FutureMoney/fargate-deployer`. npm compares that URL against the OIDC
+  claim when attaching provenance, and the claim carries GitHub's canonical
+  casing.
 - `inspect` tests no longer shell out to `dist/`, which does not exist when the
   test job runs on a clean checkout. The logic moved to `src/lib/inspect.ts` as a
   pure function and is tested from source.
@@ -102,6 +113,6 @@ every account-specific value moved out of the code and into the manifest.
 - Images are matched against a full ECR URI pattern, so registries with a port,
   digest-pinned images, and non-ECR registries all work.
 
-[Unreleased]: https://github.com/futuremoney/fargate-deployer/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/FutureMoney/fargate-deployer/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/futuremoney/fargate-deployer/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/futuremoney/fargate-deployer/releases/tag/v1.0.0
