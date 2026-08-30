@@ -175,14 +175,24 @@ Actions, and fill in:
 
 | Field | Value |
 | --- | --- |
-| Organization or user | `futuremoney` |
+| Organization or user | `FutureMoney` |
 | Repository | `fargate-deployer` |
 | Workflow filename | `release.yml` |
 | Environment | *(leave empty)* |
 | Allowed actions | `npm publish` |
 
-The workflow filename must match exactly — OIDC claims include the workflow path,
-and a mismatch is rejected with an authentication error rather than a helpful one.
+**Every field is case-sensitive and matched exactly**, and npm does not validate
+the configuration when you save it — a mistake only shows up as an authentication
+failure at publish time. Two that are easy to get wrong:
+
+- The organization is `FutureMoney`, not `futuremoney`. GitHub treats repository
+  *URLs* case-insensitively, so the lowercase form works everywhere else in this
+  repository and gives no hint that it is wrong here.
+- The environment must be empty, because the release job declares no
+  `environment:`. Filling it in when the job has none fails validation.
+
+For the same reason `package.json` carries `repository.url` in the canonical
+casing: npm compares it against the OIDC claim when attaching provenance.
 
 ### That is the whole setup
 

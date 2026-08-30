@@ -1,7 +1,7 @@
 {
   "name": "fargate-deployer",
   "version": "1.1.0",
-  "description": "Deploy containers to AWS ECS Fargate from a declarative manifest — long-running services behind an ALB, or EventBridge-scheduled tasks.",
+  "description": "Deploy containers to AWS ECS Fargate from a declarative manifest \u2014 long-running services behind an ALB, or EventBridge-scheduled tasks.",
   "keywords": [
     "aws",
     "ecs",
@@ -16,11 +16,11 @@
   "author": "FutureMoney",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/futuremoney/fargate-deployer.git"
+    "url": "git+https://github.com/FutureMoney/fargate-deployer.git"
   },
-  "homepage": "https://github.com/futuremoney/fargate-deployer#readme",
+  "homepage": "https://github.com/FutureMoney/fargate-deployer#readme",
   "bugs": {
-    "url": "https://github.com/futuremoney/fargate-deployer/issues"
+    "url": "https://github.com/FutureMoney/fargate-deployer/issues"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
