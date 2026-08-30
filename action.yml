@@ -322,7 +322,7 @@ runs:
     - name: Build and push
       id: build
       if: inputs.image == '' && inputs.command != 'validate'
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v7
       with:
         context: ${{ inputs.working-directory }}/${{ inputs.context }}
         file: ${{ inputs.working-directory }}/${{ inputs.context }}/${{ inputs.dockerfile }}
