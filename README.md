@@ -30,7 +30,7 @@ a manifest — no CDK app, no Node.js toolchain, no CloudFormation templates, no
 - [Scheduled tasks](#scheduled-tasks)
 - [Calling it as a reusable workflow](#calling-it-as-a-reusable-workflow)
 - [Running it outside GitHub Actions](#running-it-outside-github-actions)
-- [Using the constructs in your own CDK app](#using-the-constructs-in-your-own-cdk-app)
+- [Using it inside your own CDK app](#using-it-inside-your-own-cdk-app)
 - [Documentation](#documentation)
 
 ---
@@ -381,28 +381,33 @@ It uses your ambient AWS credentials, the same as any other AWS CLI tool.
 Running `diff` locally before pushing is the fastest way to see what a deploy
 would change — it is the same synthesis CI performs, so the output matches.
 
-## Using the constructs in your own CDK app
+## Using it inside your own CDK app
 
-If your repository already has a CDK app, add the stack to it rather than
-deploying a second one:
+If your repository already owns CDK infrastructure, import the stack into the
+app you have rather than deploying a second one:
 
 ```ts
 import * as cdk from 'aws-cdk-lib';
-import { loadManifest, createStack } from 'fargate-deployer';
+import { createStack, loadManifest } from 'fargate-deployer';
 
 const app = new cdk.App();
+const infra = new MyInfraStack(app, 'my-infra');
 
-createStack({
-  app,
-  config: loadManifest('deploy/production.yaml'),
-  image: process.env.IMAGE!,
-});
+const config = loadManifest('deploy/production.yaml');
+config.task.environment.QUEUE_URL = infra.queue.queueUrl; // a CDK token
 
-new MyDatabaseStack(app, 'database');
+createStack({ app, config, image: process.env.IMAGE! });
 ```
 
-`FargateServiceStack` and `ScheduledTasksStack` are exported directly if you
-want to construct them yourself.
+`cdk deploy --all` then covers both, and CDK turns that token into a real
+cross-stack reference.
+
+**This is not just a preference.** The CLI synthesises its own *single-stack*
+app, so any other stacks in your repository are invisible to it — they do not
+deploy, and nothing warns you. If you own CDK already, this is the mode you
+want.
+
+[`docs/construct-mode.md`](docs/construct-mode.md) covers the whole of it.
 
 ## Documentation
 
@@ -412,6 +417,7 @@ want to construct them yourself.
 | [AWS setup](docs/aws-setup.md) | Bootstrap, OIDC, IAM policies, prerequisites |
 | [Scheduled tasks](docs/scheduled-tasks.md) | Cron jobs in depth |
 | [Architecture](docs/architecture.md) | What is created, how it is named, why |
+| [Construct mode](docs/construct-mode.md) | Using the stacks inside a CDK app you already have |
 | [Troubleshooting](docs/troubleshooting.md) | Common failures and what they mean |
 | [Contributing](CONTRIBUTING.md) | Development setup and release process |
 | [Security policy](SECURITY.md) | Reporting a vulnerability, and the action's trust boundaries |
