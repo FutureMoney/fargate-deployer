@@ -83,6 +83,36 @@ jobs:
 
           echo "Published $TAG and moved $major to it." >> "$GITHUB_STEP_SUMMARY"
 
+      # The Marketplace publishes a *Release*, not a tag, and the listing is
+      # attached to one. Creating it here means every version has a release
+      # page to publish from, and the notes come from the changelog rather than
+      # being retyped.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it alone."
+            exit 0
+          fi
+
+          # Pull just this version's section out of the changelog.
+          notes=$(awk -v tag="${TAG#v}" '
+            $0 ~ "^## \\[" tag "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            notes="See CHANGELOG.md for details."
+          fi
+
+          gh release create "$TAG" --title "$TAG" --notes "$notes"
+          echo "Created release $TAG." >> "$GITHUB_STEP_SUMMARY"
+
       # The action itself never needs npm — it runs from the tagged dist/. This
       # publish is for the CLI (`npx fargate-deployer diff`) and for importing
       # the constructs into someone's own CDK app.
