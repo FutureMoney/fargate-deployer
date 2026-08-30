@@ -109,6 +109,29 @@ jobs:
             sed -i '/_authToken/d; /always-auth/d' .npmrc
           fi
 
+          # `npm error code ENEEDAUTH` has two very different causes and the
+          # message does not distinguish them, so state which one applies:
+          #   - OIDC unavailable -> the job lacks `id-token: write`
+          #   - OIDC available but refused -> the trusted publisher on npmjs.com
+          #     does not match this repository/workflow (every field is exact
+          #     and case-sensitive, and npm does not validate it when saved)
+          echo "--- trusted publishing preflight ---"
+          echo "npm:            $(npm --version)"
+          echo "node:           $(node --version)"
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "OIDC token:     available (id-token: write is in effect)"
+            echo "                so an auth failure below means the npmjs.com"
+            echo "                trusted publisher does not match:"
+            echo "                  owner/repo   ${GITHUB_REPOSITORY}"
+            echo "                  workflow     $(basename "${GITHUB_WORKFLOW_REF%%@*}")"
+            echo "                  environment  (none — must be blank on npmjs.com)"
+          else
+            echo "OIDC token:     MISSING — the job has no id-token: write, so npm"
+            echo "                cannot use trusted publishing at all."
+          fi
+          echo "package repo:   $(node -p "require('./package.json').repository.url")"
+          echo "------------------------------------"
+
           version="${TAG#v}"
           if npm view "fargate-deployer@$version" version >/dev/null 2>&1; then
             echo "fargate-deployer@$version is already on npm; nothing to do."
