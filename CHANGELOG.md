@@ -9,6 +9,13 @@ as breaking — it produces a CloudFormation diff on every consumer's next deplo
 
 ## [Unreleased]
 
+### Fixed
+
+- `action.yml`'s description was 184 characters, and the Marketplace rejects
+  anything from 125 up — a limit it only enforces when you publish a release,
+  long after the tag is cut. Shortened, and CI now checks the listing metadata
+  (`npm run check:action`) so it fails on a pull request instead.
+
 ## [1.1.0] - 2026-08-29
 
 ### Added

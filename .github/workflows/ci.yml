@@ -83,3 +83,13 @@ jobs:
         uses: raven-actions/actionlint@v2
         with:
           fail-on-error: true
+
+      # actionlint checks workflow syntax; it knows nothing about the
+      # Marketplace's listing rules, which are otherwise only enforced at
+      # publish time — after the tag and release already exist.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check:action

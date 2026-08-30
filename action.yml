@@ -1,8 +1,9 @@
 name: 'Fargate Deployer'
+# The Marketplace rejects a description of 125 characters or more. Keep it
+# short here and let the README carry the detail.
 description: >-
-  Build, push and deploy a container to AWS ECS Fargate from a declarative
-  manifest — a long-running service behind an Application Load Balancer, or a
-  set of EventBridge-scheduled tasks.
+  Build, push and deploy to AWS ECS Fargate from a manifest — an ALB-backed
+  service or EventBridge scheduled tasks.
 author: 'FutureMoney'
 
 branding:

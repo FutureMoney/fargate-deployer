@@ -1,7 +1,7 @@
 {
   "name": "fargate-deployer",
   "version": "1.1.0",
-  "description": "Deploy containers to AWS ECS Fargate from a declarative manifest — long-running services behind an ALB, or EventBridge-scheduled tasks.",
+  "description": "Deploy containers to AWS ECS Fargate from a declarative manifest \u2014 long-running services behind an ALB, or EventBridge-scheduled tasks.",
   "keywords": [
     "aws",
     "ecs",
@@ -45,6 +45,7 @@
     "clean": "rm -rf dist",
     "test": "jest",
     "typecheck": "tsc --noEmit",
+    "check:action": "node scripts/check-action-metadata.js",
     "prepack": "npm run clean && npm run build"
   },
   "dependencies": {
