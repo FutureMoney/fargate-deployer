@@ -11,8 +11,27 @@ updates:
     groups:
       aws-cdk:
         patterns: ['aws-cdk', 'aws-cdk-lib', 'constructs']
+      # jest, ts-jest and typescript are peer-coupled — ts-jest pins a
+      # typescript range and a jest range — so bumping one without the others
+      # can be uninstallable. A dependency joins the first group it matches, so
+      # this must come before dev-dependencies.
+      test-toolchain:
+        patterns: ['jest', '@types/jest', 'ts-jest', 'typescript']
       dev-dependencies:
         dependency-type: development
+        # Majors get their own pull request. Grouped, a single impossible bump
+        # takes the whole batch down with it: typescript 7 has no compatible
+        # ts-jest, and it blocked jest 30, @types/jest 30 and @types/node 26 —
+        # all three of which install fine on their own.
+        update-types: ['minor', 'patch']
+
+    ignore:
+      # ts-jest's peer range is `>=4.3 <7`, and 29.4.12 is the latest release,
+      # so TypeScript 7 cannot be installed here at all. Without this Dependabot
+      # reopens an unmergeable pull request every week. Drop it once ts-jest
+      # ships TypeScript 7 support.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
 
   # Actions used by this repository's own workflows AND by action.yml. The second
   # matters more: consumers of this action inherit whatever it runs, so a stale
