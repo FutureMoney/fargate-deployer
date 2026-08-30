@@ -1,0 +1,1 @@
+{"version":3,"file":"interpolate.d.ts","sourceRoot":"","sources":["../../src/lib/interpolate.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;GAcG;AAIH,qBAAa,kBAAmB,SAAQ,KAAK;IAC/B,QAAQ,CAAC,SAAS,EAAE,MAAM,EAAE;gBAAnB,SAAS,EAAE,MAAM,EAAE;CAQzC;AAED;;;;;GAKG;AACH,wBAAgB,WAAW,CAAC,CAAC,EAAE,KAAK,EAAE,CAAC,EAAE,GAAG,GAAE,MAAM,CAAC,UAAwB,GAAG,CAAC,CAOhF"}
