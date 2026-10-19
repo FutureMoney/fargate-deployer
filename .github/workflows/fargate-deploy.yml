@@ -211,7 +211,7 @@ jobs:
       alb-dns-name: ${{ steps.deploy.outputs.alb-dns-name }}
       alb-hosted-zone-id: ${{ steps.deploy.outputs.alb-hosted-zone-id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: deploy
         # Pinned to the major tag, which the release workflow moves on every
