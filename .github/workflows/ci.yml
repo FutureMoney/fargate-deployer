@@ -35,7 +35,7 @@ jobs:
         node: ['20', '22', '24']
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: npm
@@ -87,7 +87,7 @@ jobs:
       # actionlint checks workflow syntax; it knows nothing about the
       # Marketplace's listing rules, which are otherwise only enforced at
       # publish time — after the tag and release already exist.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
